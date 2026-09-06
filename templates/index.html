@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Dashboard</h1>
+<p>{{ competitor_count }} competitor(s) on file.</p>
+
+<h2>Events</h2>
+{% if events %}
+<table class="list">
+  <tr><th>Event</th><th>Scoring</th><th></th></tr>
+  {% for e in events %}
+  <tr>
+    <td>{{ e.name }}</td>
+    <td>{{ scoring_short_label(e.scoring_type) }}</td>
+    <td>
+      <a class="row-action" href="{{ url_for('event_detail', eid=e.id) }}">Manage rounds &amp; scoring</a>
+      <a class="row-action" href="{{ url_for('leaderboards', eid=e.id) }}">Leaderboards</a>
+    </td>
+  </tr>
+  {% endfor %}
+</table>
+{% else %}
+<p>No events yet. <a href="{{ url_for('events') }}">Create one</a>.</p>
+{% endif %}
+
+<p><a class="button" href="{{ url_for('events') }}">+ New Event / Edit Events</a>
+<a class="button" href="{{ url_for('competitors') }}">+ Add Competitors</a></p>
+{% endblock %}

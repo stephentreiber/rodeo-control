@@ -1,0 +1,7 @@
+{% if all_events %}
+<div class="event-tabs">
+  {% for ev in all_events %}
+  <a class="event-tab {{ 'active' if ev.id == event.id }}" href="{{ url_for('event_detail', eid=ev.id) }}">{{ ev.name }}</a>
+  {% endfor %}
+</div>
+{% endif %}

@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Review Import
+  <span class="tip" tabindex="0">?
+    <span class="tip-bubble">Round names keep their original text from the page (handy for navigating) — the
+    <strong>Round #</strong> column is separate and only affects leaderboard grouping. Multiple performances given
+    the same round number (e.g. every slack performance set to Round 1, every regular performance set to Round 2)
+    get combined for round-leaderboard purposes without renaming anything. "Auto" shows the round number it would
+    pick in brackets, assuming every row is left on auto.</span>
+  </span>
+</h1>
+
+{% if result.warnings %}
+<div class="flash">
+  <strong>{{ result.warnings|length }} row(s) couldn't be classified and were skipped:</strong>
+  {% for w in result.warnings[:10] %}<p><small>{{ w }}</small></p>{% endfor %}
+</div>
+{% endif %}
+
+<form method="post" action="{{ url_for('import_confirm') }}">
+  <input type="hidden" name="token" value="{{ token }}">
+
+  <p>
+    <button type="submit" class="button-primary">Import Selected Rounds</button>
+  </p>
+
+  <p>
+    <button type="button" onclick="document.querySelectorAll('.round-check').forEach(c => c.checked = true)">Select All</button>
+    <button type="button" onclick="document.querySelectorAll('.round-check').forEach(c => c.checked = false)">Select None</button>
+    &nbsp; | &nbsp;
+    <label>Apply Round # <select id="bulk-round-number">
+      <option value="">—</option>
+      {% for n in range(1, 11) %}<option value="{{ n }}">{{ n }}</option>{% endfor %}
+    </select> to all checked rows</label>
+    <button type="button" onclick="applyBulkRoundNumber()">Apply to Selected</button>
+  </p>
+
+  {% if max_rounds > 0 %}
+  <div class="card-form">
+    <label>Rename rounds across ALL events</label>
+    <p class="settings-hint">Most rodeos use the same round names for every event (Slack, Round 1, Round 2, Short
+    Go, etc.) -- fill these in once and apply them everywhere, instead of retyping the same names under each event
+    below. An event with fewer rounds than shown here just skips whichever positions it doesn't have.</p>
+    <div class="theme-color-row">
+      {% for i in range(max_rounds) %}
+      <label>Round {{ i + 1 }} name
+        <input type="text" class="bulk-round-name" data-position="{{ i }}"
+               value="{{ bulk_round_defaults[i] if i < bulk_round_defaults|length else '' }}" style="width: 160px;">
+      </label>
+      {% endfor %}
+    </div>
+    <button type="button" onclick="applyBulkRoundNames()">Apply to All Events</button>
+  </div>
+  {% endif %}
+
+  {% for ev in result.events %}
+  {% set event_idx = loop.index0 %}
+  <h2>{{ ev.name }} <small>({{ scoring_short_label(ev.scoring_type) }})</small></h2>
+  <table class="list">
+    <tr><th></th><th>Round Name</th><th>Round #</th><th>Entries</th></tr>
+    {% for rnd in ev.rounds %}
+    {% set key = event_idx ~ ':' ~ loop.index0 %}
+    <tr class="round-row">
+      <td><input class="round-check" type="checkbox" name="round_key" value="{{ key }}" checked></td>
+      <td><input type="text" name="round_name__{{ key }}" value="{{ rnd.name }}" style="width: 280px;"></td>
+      <td>
+        <select class="round-number-picker" name="round_number__{{ key }}">
+          <option value="">auto ({{ auto_round_numbers.get(key, '?') }})</option>
+          {% for n in range(1, 11) %}<option value="{{ n }}">{{ n }}</option>{% endfor %}
+        </select>
+      </td>
+      <td>{{ rnd.entries|length }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% endfor %}
+
+  <p><button type="submit">Import Selected Rounds</button></p>
+</form>
+
+<p><a href="{{ url_for('import_page') }}">← Start over</a></p>
+
+<script>
+function applyBulkRoundNumber() {
+  const value = document.getElementById('bulk-round-number').value;
+  if (!value) return;
+  document.querySelectorAll('.round-check:checked').forEach(cb => {
+    const row = cb.closest('tr');
+    const picker = row.querySelector('.round-number-picker');
+    if (picker) picker.value = value;
+  });
+}
+
+// Applies each position's name to every event's round at that same
+// position -- e.g. "Round 1 name" fills in the first round under
+// every event, "Round 2 name" the second, and so on. An event with
+// fewer rounds than a given position (e.g. team roping only running
+// slack + one round while other events run three) naturally has no
+// row at that position, so it's just skipped for that event -- never
+// forced to match a count it doesn't have. A blank bulk field is left
+// alone rather than blanking out that position everywhere, so leaving
+// one empty can't accidentally wipe out a round's name.
+function applyBulkRoundNames() {
+  const values = {};
+  document.querySelectorAll('.bulk-round-name').forEach(input => {
+    if (input.value.trim() !== '') values[input.dataset.position] = input.value;
+  });
+  document.querySelectorAll('table.list').forEach(table => {
+    table.querySelectorAll('tr.round-row').forEach((row, idx) => {
+      const val = values[String(idx)];
+      if (val === undefined) return;
+      const nameInput = row.querySelector('input[name^="round_name__"]');
+      if (nameInput) nameInput.value = val;
+    });
+  });
+}
+
+// Clicking anywhere in a round's row toggles its checkbox, except when
+// clicking directly on an editable field (text box / dropdown) so people
+// can still rename or set a round number without accidentally toggling.
+document.querySelectorAll('tr.round-row').forEach(row => {
+  row.addEventListener('click', function(e) {
+    if (['INPUT', 'SELECT', 'OPTION'].includes(e.target.tagName)) return;
+    const cb = row.querySelector('.round-check');
+    if (cb) cb.checked = !cb.checked;
+  });
+});
+</script>
+{% endblock %}

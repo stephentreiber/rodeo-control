@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>{{ rodeo_name }} — Rodeo Control</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Oswald:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body id="top">
+<div class="sticky-header" id="sticky-header">
+<header class="topbar">
+  <div class="topbar-live">
+    {% if nav_events %}
+    <form method="post" action="{{ url_for('set_live_event') }}" class="live-form">
+      <label>Event:
+        <select name="event_id">
+          <option value="">Select event...</option>
+          {% for ev in nav_events %}
+          <option value="{{ ev.id }}" {{ 'selected' if nav_live_event_id == ev.id|string }}>{{ ev.name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <button type="submit" class="live-go-btn {{ 'is-live' if nav_live_event_id else 'is-pending' }}">
+        {{ 'LIVE' if nav_live_event_id else 'Go Live' }}
+      </button>
+    </form>
+
+    {% if nav_live_event_id %}
+    <form method="post" action="{{ url_for('set_live_round') }}" class="live-form">
+      <label>Round:
+        {% if nav_live_round_numbers %}
+        <select name="round_number">
+          <option value="">Select round #...</option>
+          {% for num in nav_live_round_numbers %}
+          <option value="{{ num }}" {{ 'selected' if nav_active_round_number == num|string }}>Round {{ num }}</option>
+          {% endfor %}
+        </select>
+        {% else %}
+        <em class="no-rounds-note">no rounds yet</em>
+        {% endif %}
+      </label>
+      {% if nav_live_round_numbers %}
+      <button type="submit" class="live-go-btn {{ 'is-live' if nav_active_round_number else 'is-pending' }}">
+        {{ 'LIVE' if nav_active_round_number else 'Go Live' }}
+      </button>
+      {% endif %}
+    </form>
+    {% endif %}
+    {% endif %}
+  </div>
+
+  <div class="brand"><a href="{{ url_for('index') }}">{{ rodeo_name }}</a></div>
+
+  <nav>
+    <a href="{{ url_for('index') }}">Dashboard</a>
+    <div class="nav-dropdown">
+      <button type="button" class="nav-dropdown-toggle">Events <span class="nav-caret">▾</span></button>
+      <div class="nav-dropdown-menu">
+        <a href="{{ url_for('events') }}">All Events</a>
+        {% if nav_events %}
+        <div class="nav-dropdown-divider"></div>
+        {% for ev in nav_events %}
+        <a href="{{ url_for('event_detail', eid=ev.id) }}">{{ ev.name }}</a>
+        {% endfor %}
+        {% endif %}
+      </div>
+    </div>
+    <a href="{{ url_for('whos_up_page') }}">Who's Up</a>
+    <div class="nav-dropdown">
+      <button type="button" class="nav-dropdown-toggle">Manage <span class="nav-caret">▾</span></button>
+      <div class="nav-dropdown-menu nav-dropdown-menu-right">
+        <a href="{{ url_for('competitors') }}">Competitors</a>
+        <a href="{{ url_for('import_page') }}">Import Draw</a>
+        <a href="{{ url_for('guests_page') }}">Guests</a>
+        <a href="{{ url_for('stock_page') }}">Stock</a>
+        <a href="{{ url_for('fifty_fifty_page') }}">50/50</a>
+        <div class="nav-dropdown-divider"></div>
+        <a href="{{ url_for('announcer_screen') }}" target="_blank">Announcer Screen</a>
+      </div>
+    </div>
+    <a href="{{ url_for('settings') }}">Settings</a>
+  </nav>
+</header>
+
+{% if xml_export_status %}
+<div class="xml-export-warning">
+  <strong>XML export is failing</strong> -- broadcast graphics may be stale.
+  Last error at {{ xml_export_status.error_at }} ({{ xml_export_status.error }}).
+  Last successful export: {{ xml_export_status.success_at }}.
+  Check the export folder in <a href="{{ url_for('settings') }}">Settings</a> is reachable.
+</div>
+{% endif %}
+</div>
+<div class="sticky-subnav" id="sticky-subnav">{% block subnav %}{% endblock %}</div>
+<main>
+  {% with messages = get_flashed_messages() %}
+    {% if messages %}
+      <div class="flash">{% for m in messages %}<p>{{ m }}</p>{% endfor %}</div>
+    {% endif %}
+  {% endwith %}
+  {% block content %}{% endblock %}
+</main>
+<footer class="build-stamp">Build 2026-09-04-x</footer>
+
+<a href="#top" id="back-to-top" class="back-to-top" title="Back to top">↑</a>
+
+<script>
+function positionSubnav() {
+  const header = document.getElementById('sticky-header');
+  const subnav = document.getElementById('sticky-subnav');
+  if (header && subnav) {
+    subnav.style.top = header.offsetHeight + 'px';
+  }
+}
+window.addEventListener('load', positionSubnav);
+window.addEventListener('resize', positionSubnav);
+// Run once immediately too, in case images/webfonts already settled.
+positionSubnav();
+
+// Show the "back to top" arrow only once the page has scrolled a bit.
+window.addEventListener('scroll', function() {
+  const btn = document.getElementById('back-to-top');
+  if (!btn) return;
+  btn.classList.toggle('visible', window.scrollY > 300);
+});
+
+// Tooltip icons (.tip) show their .tip-bubble on hover/focus via CSS
+// alone, but touchscreens have no hover -- so tapping toggles an "open"
+// class too, and tapping anywhere else closes whatever's open.
+document.querySelectorAll('.tip').forEach(tip => {
+  if (!tip.hasAttribute('tabindex')) tip.setAttribute('tabindex', '0');
+  tip.addEventListener('click', function(e) {
+    e.stopPropagation();
+    const wasOpen = tip.classList.contains('open');
+    document.querySelectorAll('.tip.open').forEach(t => t.classList.remove('open'));
+    if (!wasOpen) tip.classList.add('open');
+  });
+});
+// Events/Manage nav dropdowns -- same click-to-toggle pattern as the
+// .tip tooltips above (hover alone doesn't work on touchscreens, and
+// this needs to work on a tablet just as well as a desktop browser).
+document.querySelectorAll('.nav-dropdown-toggle').forEach(toggle => {
+  toggle.addEventListener('click', function(e) {
+    e.stopPropagation();
+    const dropdown = toggle.closest('.nav-dropdown');
+    const wasOpen = dropdown.classList.contains('open');
+    document.querySelectorAll('.nav-dropdown.open').forEach(d => d.classList.remove('open'));
+    if (!wasOpen) dropdown.classList.add('open');
+  });
+});
+
+document.addEventListener('click', function() {
+  document.querySelectorAll('.tip.open').forEach(t => t.classList.remove('open'));
+  document.querySelectorAll('.nav-dropdown.open').forEach(d => d.classList.remove('open'));
+});
+</script>
+</body>
+</html>

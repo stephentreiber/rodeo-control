@@ -1,0 +1,28 @@
+# Live rodeo data -- this is the whole point of NOT committing it. Every
+# install generates its own on first run (see database.init_db()).
+rodeo_data.db
+rodeo_data.db-journal
+
+# Generated on every scoring action -- see xml_export.py. Shipping stale
+# example data in the repo would be actively misleading to clone into a
+# fresh install.
+exports/*.xml
+
+# Cached parsed draw-sheet uploads (see importer.py) -- transient, tied
+# to one machine's in-progress import, not something to version.
+import_cache/*
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+env/
+
+# Editor / OS cruft
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini

@@ -1,0 +1,767 @@
+:root {
+  /* Default modernized palette (2026 redesign, reference:
+     trackscore.online) -- overridden per-installation via an inline
+     <style> block in base.html, generated from the colors saved on the
+     Settings page. Falls back to these if nothing's been customized
+     yet (fresh install). Deliberately just three customizable
+     variables: the semantic colors (red for errors/danger, green for
+     success, yellow for the live-row highlight) stay fixed on purpose,
+     so changing branding can't accidentally make an error look like a
+     success or blur what "live" means. */
+  --color-primary: #3b5fd9;
+  --color-accent: #4f7cff;
+  --color-tint: #0a0e1a;
+
+  /* Fixed neutral scaffolding (surfaces, text, borders) -- NOT exposed
+     on the Settings page, unlike the three above. This is the "modern"
+     part of the redesign: a dark navy page with slightly-lighter
+     outlined cards, rather than a plain white background. */
+  --color-surface: #12151f;
+  --color-surface-alt: #181c29;
+  --color-border: #262b3c;
+  --color-text: #f0eee7;
+  --color-text-muted: #98a2b8;
+  --color-penalty-note: #e0b23f;
+
+  /* Semantic colors, tuned to read clearly against the dark surfaces
+     above -- same "stays fixed, not customizable" principle as the
+     note above. */
+  --color-danger: #e35c4e;
+  --color-danger-bg: #34201f;
+  --color-danger-border: #5c2e2a;
+  --color-success: #3ecf7a;
+  --color-success-bg: #15301f;
+  --color-success-border: #235c39;
+  --color-warning-bg: #3a2f14;
+  --color-warning-solid: #e0b23f;
+
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 18px;
+  --font-display: 'Oswald', -apple-system, Segoe UI, Arial, sans-serif;
+}
+* { box-sizing: border-box; }
+body {
+  font-family: 'Inter', -apple-system, Segoe UI, Arial, sans-serif;
+  margin: 0;
+  background: var(--color-tint);
+  color: var(--color-text);
+}
+/* Global link color -- without this, any plain <a> with no specific
+   class (a handful of inline "see also" links scattered through the
+   content area) falls back to the browser's default blue/purple
+   visited-link colors, which look especially jarring against the dark
+   theme. Everything with its own class (.button, .round-tab, nav
+   links, etc.) already overrides this where a different look is
+   wanted. */
+a { color: var(--color-accent); }
+a:visited { color: var(--color-accent); }
+a:hover { color: var(--color-primary); }
+/* Same issue as links above, but for form controls -- none of the
+   more specific input/select rules elsewhere in this file ever set an
+   explicit color or background (the old light theme never needed it,
+   since the browser's own default white-bg/black-text already matched).
+   This sets a sane dark-theme default for every text-like control;
+   anything that needs to look different (the transparent look-like-
+   plain-text .edit-field cells, colored success/error states, etc.)
+   already overrides it via a more specific selector. Checkboxes,
+   radios, and the native color-swatch picker are deliberately excluded
+   -- those should keep their normal OS appearance, not be forced dark. */
+input:not([type="checkbox"]):not([type="radio"]):not([type="color"]), select, textarea {
+  color: var(--color-text);
+  background: var(--color-surface);
+  border-color: var(--color-border);
+}
+h1, h2, h3 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: 0.2px;
+}
+.topbar {
+  background: var(--color-surface);
+  color: var(--color-text);
+  padding: 10px 24px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--color-border);
+}
+.topbar a { color: var(--color-text); text-decoration: none; margin-left: 18px; font-weight: 600; }
+.topbar a:hover { color: var(--color-accent); }
+/* Three-part layout -- Live Event/Round controls, brand, nav all share
+   the one bar now (used to be two stacked bars). Giving the outer two
+   sections equal flex-grow is what actually centers the brand text
+   regardless of how wide the live controls or nav happen to be --
+   justify-content: space-between alone wouldn't do that whenever
+   those two sides aren't the same width. */
+.topbar-live { flex: 1 1 0; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.brand { flex: 1 1 0; text-align: center; }
+.brand a { margin-left: 0; font-size: 1.2em; color: var(--color-accent); }
+
+nav { flex: 1 1 0; display: flex; justify-content: flex-end; align-items: center; flex-wrap: wrap; }
+
+/* Events / Manage dropdowns in the topbar -- click-to-toggle (see the
+   script at the bottom of this file), not hover-only, since this needs
+   to work on a tablet as well as a desktop browser. */
+.nav-dropdown { position: relative; margin-left: 18px; }
+.nav-dropdown-toggle {
+  background: none;
+  border: none;
+  color: var(--color-text);
+  font-weight: 600;
+  font-size: 1em;
+  font-family: inherit;
+  cursor: pointer;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.nav-dropdown-toggle:hover { color: var(--color-accent); }
+.nav-caret { font-size: 0.7em; }
+.nav-dropdown-menu {
+  display: none;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 14px;
+  min-width: 220px;
+  max-height: 70vh;
+  overflow-y: auto;
+  background: var(--color-surface-alt);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 12px 32px rgba(0,0,0,0.45);
+  padding: 8px;
+  z-index: 300;
+}
+.nav-dropdown.open .nav-dropdown-menu { display: block; }
+/* The Manage dropdown is the rightmost nav item -- opening it from its
+   left edge (the default) pushes the menu past the right edge of the
+   viewport and forces the whole page wider. Opening it from its right
+   edge instead keeps it fully on-screen. */
+.nav-dropdown-menu-right { left: auto; right: 0; }
+.nav-dropdown-menu a {
+  display: block;
+  margin-left: 0 !important;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.nav-dropdown-menu a:hover { background: var(--color-border); color: var(--color-accent); }
+.nav-dropdown-divider { height: 1px; background: var(--color-border); margin: 6px 4px; }
+main { max-width: 1600px; margin: 24px auto; padding: 0 30px; }
+h1, h2 { color: var(--color-accent); }
+table.list { width: 100%; border-collapse: collapse; margin: 12px 0 24px; background: var(--color-surface); }
+table.list th, table.list td { border: 1px solid var(--color-border); padding: 8px 10px; text-align: left; }
+table.list th { background: var(--color-tint); }
+table.list tr:nth-child(even) { background: var(--color-surface-alt); }
+tr.live { background: var(--color-warning-bg); }
+.card-form { background: var(--color-surface); padding: 16px; border-radius: var(--radius-md); margin-bottom: 20px; border: 1px solid var(--color-border); }
+.card-form .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 12px; }
+.card-form label, .inline-form label { display: block; font-size: 0.9em; margin-bottom: 4px; }
+.card-form input, select { width: 100%; padding: 6px; border: 1px solid var(--color-border); border-radius: 4px; }
+
+/* Settings page: each setting (or small group of related settings)
+   gets its own clearly bounded card, rather than one long undifferen-
+   tiated form -- a left accent stripe plus its own heading makes it
+   obvious at a glance where one setting ends and the next begins. */
+.settings-form { max-width: 1100px; }
+.settings-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  align-items: start;
+}
+.settings-section {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-left: 4px solid var(--color-accent);
+  border-radius: var(--radius-md);
+  padding: 16px 20px;
+  margin: 0;
+}
+@media (max-width: 900px) {
+  .settings-grid { grid-template-columns: 1fr; }
+}
+.settings-grid-standalone { margin-top: 16px; }
+.settings-save-btn { padding: 10px 24px; font-size: 1em; margin-top: 16px; }
+.settings-section h2 {
+  margin: 0 0 12px;
+  font-size: 1.05em;
+  color: var(--color-primary);
+}
+.settings-section label { display: block; font-size: 0.9em; margin-bottom: 4px; font-weight: 600; }
+.settings-section input:not([type="color"]), .settings-section select {
+  width: 100%;
+  padding: 6px;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  font-weight: normal;
+}
+.settings-hint { font-size: 0.85em; color: var(--color-text-muted); margin: 6px 0 0; }
+.settings-subhead { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--color-border); }
+label.inline { display: inline-block; margin-right: 16px; width: auto; }
+.inline-form { display: flex; gap: 10px; align-items: end; margin-bottom: 16px; }
+button { background: var(--color-accent); color: var(--color-text); border: none; padding: 8px 14px; border-radius: var(--radius-sm); cursor: pointer; font-weight: 600; }
+button.danger { background: var(--color-danger); }
+button.tiny { padding: 2px 6px; font-size: 0.8em; }
+table.list button { padding: 4px 10px; font-size: 0.85em; }
+table.list button.tiny { padding: 2px 6px; }
+.badge { background: var(--color-danger); color: var(--color-text); padding: 3px 8px; border-radius: 3px; font-size: 0.85em; }
+.event-tabs { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 2px solid var(--color-primary); margin-bottom: 16px; }
+.event-tab { padding: 8px 16px; background: var(--color-tint); color: var(--color-primary); text-decoration: none; border-radius: 6px 6px 0 0; font-weight: 600; font-size: 0.9em; }
+.event-tab.active { background: var(--color-primary); color: var(--color-text); }
+.round-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 16px; }
+.round-tab { padding: 6px 14px; background: var(--color-surface); color: var(--color-accent); text-decoration: none; border: 1px solid var(--color-accent); border-radius: 16px; font-size: 0.85em; font-weight: 600; display: inline-flex; align-items: center; gap: 4px; }
+
+/* Small pill-style action links used inside tables (e.g. the Dashboard's
+   "Manage rounds & scoring" / "Leaderboards" per-event links) --
+   same visual language as .round-tab, so a table row full of these
+   reads as a set of clear actions rather than a wall of bare, default-
+   colored link text. */
+.row-action {
+  display: inline-block;
+  padding: 4px 12px;
+  margin-right: 6px;
+  border: 1px solid var(--color-accent);
+  border-radius: 999px;
+  color: var(--color-accent);
+  font-size: 0.85em;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.row-action:hover { background: var(--color-accent); color: var(--color-text); }
+.round-tab-name { max-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.round-tab.active { background: var(--color-accent); color: var(--color-text); }
+.build-stamp { text-align: center; color: var(--color-text-muted); font-size: 0.75em; padding: 20px 0 10px; }
+.live-form { display: flex; gap: 6px; align-items: center; }
+.live-form label { color: var(--color-text); font-size: 0.8em; font-weight: 600; display: flex; gap: 6px; align-items: center; }
+.live-form select { padding: 3px 5px; border-radius: 3px; max-width: 200px; font-size: 0.9em; }
+.live-form button { padding: 4px 10px; font-size: 0.8em; background: var(--color-danger); }
+
+/* Live Event/Round buttons: a slow yellow flash when nothing's live
+   yet at that level (event, or round within a live event) -- easy to
+   miss forgetting to go live otherwise, since the rest of the app
+   works fine either way. Goes steady solid red with "LIVE" as soon as
+   that level is actually live, so a glance across the room confirms
+   it without reading any text. */
+.live-go-btn.is-pending {
+  background: var(--color-danger);
+  font-weight: 700;
+  animation: live-btn-flash 1.8s ease-in-out infinite;
+}
+.live-go-btn.is-live {
+  background: var(--color-danger);
+  font-weight: 700;
+  animation: none;
+}
+@keyframes live-btn-flash {
+  0%, 100% { background: var(--color-danger); color: var(--color-text); }
+  50% { background: var(--color-warning-solid); color: var(--color-text); }
+}
+.round-num-tag { opacity: 0.7; font-size: 0.85em; white-space: nowrap; flex-shrink: 0; }
+.no-rounds-note { color: var(--color-text-muted); font-size: 0.8em; }
+tr.round-row { cursor: pointer; }
+tr.round-row:hover { background: var(--color-surface-alt); }
+tr.round-row input, tr.round-row select { cursor: default; }
+
+.sticky-header { position: sticky; top: 0; z-index: 200; }
+.sticky-subnav { position: sticky; z-index: 190; background: var(--color-tint); }
+.sticky-subnav:not(:empty) { padding-top: 10px; padding-bottom: 4px; box-shadow: 0 4px 6px -4px rgba(0,0,0,0.15); }
+.sticky-subnav .event-tabs, .sticky-subnav .round-tabs {
+  max-width: 1600px; margin-left: auto; margin-right: auto; padding: 0 30px;
+}
+
+.back-to-top {
+  position: fixed; bottom: 24px; right: 24px; z-index: 300;
+  width: 44px; height: 44px; border-radius: 50%;
+  background: var(--color-accent); color: var(--color-text); text-decoration: none;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.3em; box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  opacity: 0; pointer-events: none; transition: opacity 0.2s;
+}
+.back-to-top.visible { opacity: 0.85; pointer-events: auto; }
+.back-to-top:hover { opacity: 1; }
+.button-primary { font-size: 1.05em; padding: 10px 18px; }
+.editable-cell { min-width: 160px; }
+.edit-field {
+  display: block; width: 100%; border: 1px solid transparent; background: transparent;
+  padding: 2px 5px; border-radius: 3px; font-size: 1.05em; font-family: inherit;
+  color: var(--color-text);
+  transition: background 0.2s, border-color 0.2s;
+}
+.edit-field.name-field { font-weight: 700; }
+.edit-field.hometown-field { font-size: 0.85em; color: var(--color-text-muted); }
+.edit-field:hover { border-color: var(--color-border); background: var(--color-surface); }
+.edit-field:focus { outline: none; border-color: var(--color-accent); background: var(--color-surface-alt); }
+.edit-field.input-saved { background: var(--color-success-bg); border-color: var(--color-success-border); }
+.edit-field.input-error { background: var(--color-danger-bg); border-color: var(--color-danger); }
+/* Locking a round disables every field in it, including the
+   competitor name and draw animal -- those need to stay just as
+   legible locked as unlocked, so only background/cursor/border change
+   here. Color is deliberately NOT overridden: bare .edit-field and
+   .name-field keep the normal bright --color-text either way, and
+   .hometown-field's own muted color above already applies regardless
+   of disabled state. */
+.edit-field:disabled { background: var(--color-surface-alt); cursor: not-allowed; border-color: transparent; }
+.edit-field:disabled:hover { border-color: transparent; }
+.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 30px; }
+.whos-up-card { background: var(--color-warning-bg); padding: 20px; border-radius: var(--radius-md); border: 2px solid var(--color-danger); max-width: 400px; }
+.flash { background: var(--color-danger-bg); border: 1px solid var(--color-danger-border); padding: 10px; border-radius: var(--radius-sm); margin-bottom: 16px; }
+
+/* Site-wide warning when the XML export folder can't be written to
+   (e.g. a network path/share that's dropped out) -- deliberately loud
+   and on every page, not tucked away in Settings, since stale
+   broadcast graphics during a live show is urgent regardless of which
+   page the scorekeeper happens to be on. */
+.xml-export-warning {
+  background: var(--color-danger);
+  color: var(--color-text);
+  padding: 10px 24px;
+  font-size: 0.9em;
+  font-weight: 600;
+  text-align: center;
+}
+.xml-export-warning a { color: var(--color-text); text-decoration: underline; }
+.score-form { display: flex; gap: 6px; }
+.score-form input[type=text] { width: 90px; }
+a.button { display: inline-block; background: var(--color-accent); color: var(--color-text); padding: 8px 14px; border-radius: var(--radius-sm); text-decoration: none; margin-right: 10px; }
+.hint { background: var(--color-surface-alt); border: 1px solid var(--color-border); padding: 10px 14px; border-radius: var(--radius-sm); font-size: 0.9em; margin-bottom: 14px; }
+.hint code { background: var(--color-surface); padding: 1px 5px; border-radius: 3px; border: 1px solid var(--color-border); }
+.score-input { width: 90px; padding: 4px; font-size: 1.05em; font-weight: 600; text-align: center; border: 2px solid var(--color-border); border-radius: var(--radius-sm); transition: background 0.2s, border-color 0.2s; }
+.score-input:focus { outline: none; border-color: var(--color-accent); background: var(--color-surface-alt); }
+.score-input.input-saved { background: var(--color-success-bg); border-color: var(--color-success-border); }
+.score-input.input-error { background: var(--color-danger-bg); border-color: var(--color-danger); }
+.error-label { display: block; font-size: 0.75em; color: var(--color-danger); margin-top: 2px; max-width: 160px; }
+tr.live { background: var(--color-warning-bg) !important; }
+
+/* Current Contestant panel */
+.contestant-panel {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-left: 4px solid var(--color-accent);
+  border-radius: var(--radius-lg);
+  padding: 18px 22px;
+  margin-bottom: 12px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+}
+.contestant-panel-waiting {
+  background: var(--color-surface-alt);
+  border: 2px dashed var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: 16px 22px;
+  margin-bottom: 12px;
+  color: var(--color-accent);
+  font-style: italic;
+  text-align: center;
+}
+.cp-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.85em;
+  color: var(--color-accent);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 10px;
+}
+.cp-header-left { display: flex; gap: 14px; align-items: center; }
+.cp-event-context {
+  font-weight: 700;
+  color: var(--color-primary);
+  background: var(--color-surface-alt);
+  padding: 2px 10px;
+  border-radius: 10px;
+  letter-spacing: normal;
+  text-transform: none;
+}
+.cp-hide-form { margin: 0; }
+.cp-hide-btn {
+  background: transparent;
+  color: var(--color-accent);
+  border: 1px solid var(--color-accent);
+  padding: 2px 10px;
+  font-size: 0.85em;
+  font-weight: 700;
+  text-transform: none;
+  letter-spacing: normal;
+  border-radius: 12px;
+  cursor: pointer;
+}
+.cp-hide-btn:hover { background: var(--color-tint); }
+.contestant-panel-collapsed {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--color-tint);
+  border: 1px dashed var(--color-accent);
+  border-radius: 8px;
+  padding: 8px 16px;
+  margin-bottom: 12px;
+  font-size: 0.9em;
+  color: var(--color-primary);
+}
+.contestant-panel-collapsed form { margin: 0; }
+.contestant-panel-collapsed button { font-size: 0.85em; padding: 4px 12px; }
+.cp-body {
+  display: grid;
+  grid-template-columns: 2fr 1.3fr 1fr;
+  gap: 24px;
+  align-items: center;
+}
+.cp-name-block .cp-name { font-size: 2em; font-weight: 800; color: var(--color-text); line-height: 1.15; word-break: break-word; }
+.cp-name-block .cp-hometown { font-size: 1.1em; color: var(--color-accent); font-weight: 600; margin-top: 2px; }
+.cp-stock-block .cp-stock-label {
+  display: block;
+  font-size: 0.75em;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--color-accent);
+  font-weight: 700;
+  margin-bottom: 2px;
+}
+.cp-stock-value { font-size: 1.3em; font-weight: 700; color: var(--color-text); word-break: break-word; }
+.cp-stock-sub { font-size: 0.95em; color: var(--color-text-muted); }
+.cp-score-block { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+.cp-score-row { display: flex; align-items: center; gap: 8px; }
+.cp-score-input { font-size: 1.6em; width: 140px; padding: 8px; text-align: center; }
+.cp-penalty-buttons { position: relative; display: flex; gap: 6px; align-items: center; }
+.penalty-controls { position: relative; display: inline-block; }
+.cp-pending-penalty {
+  display: none;
+  position: absolute;
+  left: 100%;
+  top: 50%;
+  transform: translateY(-50%);
+  margin-left: 8px;
+  white-space: nowrap;
+  font-size: 0.85em;
+  font-weight: 700;
+  color: var(--color-danger);
+  background: var(--color-danger-bg);
+  padding: 2px 8px;
+  border-radius: 10px;
+  z-index: 5;
+  pointer-events: none;
+}
+.cp-pending-penalty:not(:empty) { display: block; }
+
+/* Breakdown of what's already folded into the applied penalty (e.g.
+   "Barrier +10") -- separate from the pending badge above, which is
+   for penalties not yet folded into a saved score. A prominent red box
+   right beside the score, not a subtle note, since a penalty silently
+   folded into a bigger number is easy to miss at a glance otherwise --
+   the scorekeeper needs to see at a glance that this isn't just a raw
+   time. */
+.cp-penalty-note {
+  display: none;
+  background: var(--color-danger-bg);
+  border: 2px solid var(--color-danger);
+  color: var(--color-danger);
+  font-weight: 700;
+  font-size: 0.85em;
+  padding: 4px 10px;
+  border-radius: 6px;
+  margin-left: 10px;
+  white-space: nowrap;
+}
+.cp-penalty-note:not(:empty) { display: inline-block; }
+
+/* Same breakdown, shown next to a scored entry's row in the draw table
+   below (not just the live Current Contestant panel), so a penalty a
+   judge flagged is still visible after the run moves on. Smaller than
+   the panel's version (fits in a table row) but the same loud red
+   treatment -- a penalty is easy to lose in a wall of times otherwise. */
+.row-penalty-note {
+  display: none;
+  background: var(--color-danger-bg);
+  border: 1px solid var(--color-danger);
+  color: var(--color-danger);
+  font-weight: 700;
+  font-size: 0.75em;
+  padding: 2px 7px;
+  border-radius: 5px;
+  margin-left: 6px;
+  white-space: nowrap;
+}
+.row-penalty-note:not(:empty) { display: inline-block; }
+
+/* Current Contestant panel: live judge submissions. Each judge gets
+   their own card -- deliberately never merged into one number, since
+   different judges can and do call the same ride differently. */
+.cp-judges {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--color-tint);
+}
+.cp-judges-label {
+  font-size: 0.75em;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--color-accent);
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+.cp-judges-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 10px;
+}
+.cp-judge-card {
+  background: var(--color-surface-alt);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  text-align: center;
+}
+.cp-judge-card-waiting { opacity: 0.55; }
+.cp-judge-seat {
+  font-size: 0.7em;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--color-accent);
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+.cp-judge-waiting { font-size: 0.85em; color: var(--color-text-muted); font-style: italic; }
+.cp-judge-nums { display: block; font-size: 1.05em; font-weight: 700; color: var(--color-text); }
+.cp-judge-outcome {
+  display: inline-block;
+  font-size: 0.9em;
+  font-weight: 800;
+  color: var(--color-text);
+  background: var(--color-danger);
+  padding: 1px 8px;
+  border-radius: 10px;
+  margin-bottom: 3px;
+}
+.cp-judge-outcome-flag { background: #b23c2e; }
+
+.cp-finalize-row { margin-top: 12px; text-align: center; }
+.cp-finalize-btn {
+  width: 100%;
+  padding: 10px;
+  font-size: 1em;
+  font-weight: 700;
+  background: var(--color-success);
+  color: var(--color-text);
+}
+.cp-finalize-btn:disabled { background: var(--color-border); cursor: not-allowed; }
+.cp-take-rr-btn { background: var(--color-danger); margin-top: 8px; }
+.cp-resolve-vr-btn { background: var(--color-success); margin-top: 8px; }
+.resolve-vr-btn { background: var(--color-success); color: var(--color-text); }
+.cp-finalize-status { font-size: 0.85em; color: var(--color-accent); margin: 6px 0 0; }
+
+.cp-nav {
+  display: flex;
+  gap: 10px;
+  margin-top: 16px;
+  border-top: 1px solid var(--color-tint);
+  padding-top: 14px;
+}
+.cp-nav-btn { flex: 1; font-size: 1.05em; padding: 10px; }
+.cp-nav-btn:disabled { background: var(--color-border); cursor: not-allowed; }
+@media (max-width: 900px) {
+  .cp-body { grid-template-columns: 1fr; gap: 12px; }
+}
+
+/* Hover/tap tooltip -- replaces the old always-visible .hint boxes so
+   explanatory text is available on demand but doesn't eat screen space
+   for people who already know the workflow. */
+.tip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 19px;
+  height: 19px;
+  border-radius: 50%;
+  background: var(--color-accent);
+  color: var(--color-text);
+  font-size: 0.75em;
+  font-weight: 700;
+  cursor: help;
+  vertical-align: middle;
+  margin-left: 6px;
+  user-select: none;
+}
+.tip:hover, .tip:focus, .tip.open { background: var(--color-primary); outline: none; }
+.tip-bubble {
+  display: none;
+  position: absolute;
+  top: 140%;
+  left: 0;
+  z-index: 250;
+  background: var(--color-surface-alt);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.5;
+  width: 320px;
+  max-width: 70vw;
+  text-align: left;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+}
+.tip-bubble code { background: var(--color-border); color: var(--color-text); padding: 1px 5px; border-radius: 3px; }
+.tip:hover .tip-bubble, .tip:focus .tip-bubble, .tip.open .tip-bubble { display: block; }
+h1 .tip { font-size: 0.5em; }
+/* For tips anchored near the right edge of the page (e.g. beside the
+   lock toggle) -- grows leftward instead of rightward so the bubble
+   can't push page width out and force horizontal scrolling. */
+.tip-right .tip-bubble { left: auto; right: 0; }
+
+/* Event title row -- name on the left, round lock toggle on the right */
+.event-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.event-header h1 { margin: 0; }
+.lock-form { display: flex; align-items: center; gap: 4px; margin: 0; }
+.lock-toggle-btn {
+  background: transparent;
+  border: none;
+  font-size: 1.7em;
+  line-height: 1;
+  padding: 2px 6px;
+  cursor: pointer;
+  border-radius: 6px;
+}
+.lock-toggle-btn:hover { background: var(--color-tint); }
+
+/* Bordered box around the round-management forms at the bottom of the
+   scoring page, so they read as a distinct admin area rather than
+   blending into the page background. */
+.round-admin-box {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 16px 0 20px;
+  margin: 20px 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+.round-admin-col {
+  flex: 1 1 320px;
+  min-width: 320px;
+  padding: 0 24px;
+}
+.round-admin-col + .round-admin-col { border-left: 1px solid var(--color-border); }
+.round-admin-col h2 { margin-top: 0; }
+.round-admin-box .inline-form { flex-wrap: wrap; }
+.round-admin-box .inline-form input[type="text"],
+.round-admin-box .inline-form input:not([type]) { width: 180px; }
+
+/* Trash-can remove button in the draw table */
+.icon-btn {
+  background: transparent !important;
+  border: none;
+  font-size: 1.6em !important;
+  color: var(--color-text);
+  padding: 2px 8px !important;
+  cursor: pointer;
+  border-radius: 4px;
+  line-height: 1;
+}
+.icon-btn:hover { background: var(--color-danger-bg) !important; color: var(--color-danger); }
+.icon-btn-disabled {
+  display: inline-block;
+  font-size: 1.6em;
+  color: var(--color-text);
+  padding: 2px 8px;
+  opacity: 0.35;
+  cursor: not-allowed;
+  line-height: 1;
+}
+
+/* Stock leaderboard */
+.pending-note { color: var(--color-accent); font-size: 0.9em; font-style: italic; }
+
+/* Settings: color palette pickers */
+.theme-color-row { display: flex; gap: 24px; margin: 10px 0 16px; flex-wrap: wrap; }
+.theme-color-row label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.9em;
+  font-weight: 600;
+  width: auto;
+}
+.theme-color-row input[type="color"] {
+  width: 70px;
+  height: 40px;
+  padding: 2px;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.judge-name-row { display: flex; gap: 16px; margin: 10px 0 16px; flex-wrap: wrap; }
+.judge-name-row label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.85em;
+  font-weight: 600;
+  width: auto;
+}
+.judge-name-row input[type="text"] { width: 160px; }
+
+/* Settings: judge QR code */
+.judge-qr-block {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 16px 20px;
+  display: inline-block;
+  text-align: center;
+}
+.judge-qr-svg { display: inline-block; }
+.judge-qr-svg svg { display: block; margin: 0 auto; }
+.judge-qr-block code { font-size: 1.05em; }
+
+/* Drag-to-reorder draw rows */
+.drag-handle {
+  cursor: grab;
+  display: inline-block;
+  padding: 0 4px;
+  font-size: 1.1em;
+  color: var(--color-text-muted);
+  user-select: none;
+  touch-action: none;
+}
+.drag-handle:active { cursor: grabbing; }
+tr.draggable-row.dragging { opacity: 0.4; background: var(--color-surface-alt); }
+tr.draggable-row.drag-over-top { box-shadow: inset 0 2px 0 0 var(--color-accent, #2a6fdb); }
+tr.draggable-row.drag-over-bottom { box-shadow: inset 0 -2px 0 0 var(--color-accent, #2a6fdb); }
+
+/* Judge Scores review/manual-entry table -- dense grid, one column
+   group (Rider/Stock/Code) per judge seat, so it can get wide with 4
+   judges. Scrolls horizontally rather than squeezing/wrapping, since
+   this is a working admin tool, not something that needs to fit one
+   screen width. */
+.judge-scores-table-wrap { overflow-x: auto; margin-bottom: 24px; }
+.judge-scores-table { white-space: nowrap; }
+.judge-scores-table th, .judge-scores-table td { padding: 4px 6px; }
+.judge-group-header { text-align: center; background: var(--color-tint); border-left: 2px solid var(--color-border); }
+.judge-subcol { font-size: 0.75em; font-weight: 600; color: var(--color-text-muted); border-left: 2px solid transparent; }
+.judge-group-cell { border-left: 2px solid transparent; }
+.judge-group-cell:first-child { border-left: 2px solid var(--color-border); }
+.judge-scores-table input.js-input { width: 60px; padding: 3px; text-align: center; }
+.judge-scores-table select.js-outcome { width: 56px; padding: 3px; display: inline-block; }
+.judge-scores-table input.js-input:disabled { background: var(--color-surface-alt); color: var(--color-text-muted); }
+.judge-scores-table .js-clear { margin-left: 2px; padding: 1px 5px; }
+.js-combined-rider, .js-combined-stock, .js-official { font-weight: 700; text-align: center; }

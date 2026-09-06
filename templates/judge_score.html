@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>{{ judge_names[seat] }} — {{ rodeo_name }}</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='judge.css') }}">
+</head>
+<body>
+<div class="judge-shell">
+  <div class="judge-topbar">
+    <span class="judge-seat-label">{{ judge_names[seat] }}</span>
+    <a href="{{ url_for('judge_login_page') }}" class="switch-seat-link">Switch seat</a>
+  </div>
+
+  <div id="waiting" class="waiting-block">
+    <p>Waiting for the scorekeeper to bring up a contestant…</p>
+  </div>
+
+  <div id="scoring-area" class="scoring-area" style="display:none;">
+    <div class="now-scoring">
+      <div class="now-scoring-meta">
+        <span id="draw-number"></span>
+        <span id="event-round"></span>
+      </div>
+      <div class="now-scoring-name" id="rider-name"></div>
+      <div class="now-scoring-sub" id="rider-hometown"></div>
+      <div class="now-scoring-stock" id="stock-name"></div>
+    </div>
+
+    <div class="score-block" id="rider-score-block">
+      <div class="score-label">Rider</div>
+      <div class="score-control">
+        <button type="button" id="rider-minus" class="score-btn">−</button>
+        <div class="score-value" id="rider-score">19.0</div>
+        <button type="button" id="rider-plus" class="score-btn">+</button>
+      </div>
+    </div>
+
+    <div class="outcome-block">
+      <div class="outcome-label">Or flag the rider</div>
+      <div class="outcome-buttons">
+        {% for code, label in outcomes.items() %}
+        <button type="button" class="outcome-btn" data-outcome="{{ code }}" title="{{ label }}">{{ code }}</button>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- Stock is scored independently of anything picked above -- a
+         buck off, no score, DQ, or re-ride on the rider side never
+         disables this. Stock contractors care how the animal performed
+         regardless of what happened with the cowboy. -->
+    <div class="score-block">
+      <div class="score-label">Stock</div>
+      <div class="score-control">
+        <button type="button" id="stock-minus" class="score-btn">−</button>
+        <div class="score-value" id="stock-score">19.0</div>
+        <button type="button" id="stock-plus" class="score-btn">+</button>
+      </div>
+    </div>
+
+    <button type="button" id="submit-btn" class="submit-btn">Submit Score</button>
+    <p id="submit-status" class="submit-status" style="display:none;"></p>
+    <p id="judge-error" class="judge-error"></p>
+  </div>
+
+  <div id="timed-area" class="scoring-area" style="display:none;">
+    <div class="now-scoring">
+      <div class="now-scoring-meta">
+        <span id="timed-draw-number"></span>
+        <span id="timed-event-round"></span>
+      </div>
+      <div class="now-scoring-name" id="timed-rider-name"></div>
+      <div class="now-scoring-sub" id="timed-rider-hometown"></div>
+      <div class="now-scoring-stock" id="timed-partner-name"></div>
+    </div>
+
+    <div class="timed-current-block">
+      <div class="score-label">Current</div>
+      <div class="timed-current-display" id="timed-current-display">—</div>
+      <div class="timed-current-note" id="timed-current-note"></div>
+    </div>
+
+    <div class="outcome-block">
+      <div class="outcome-label">Flag a penalty</div>
+      <div class="outcome-buttons timed-penalty-buttons">
+        {% for b in timed_penalty_buttons %}
+        <button type="button" class="outcome-btn timed-penalty-btn" data-code="{{ b.code }}">{{ b.label }}<br>+{{ b.amount|int }}</button>
+        {% endfor %}
+        <button type="button" class="outcome-btn timed-penalty-btn timed-head-catch-btn" data-code="{{ head_catch_code }}">{{ head_catch_label }}</button>
+      </div>
+    </div>
+
+    <p id="timed-status" class="submit-status" style="display:none;"></p>
+    <p id="timed-error" class="judge-error"></p>
+  </div>
+</div>
+
+<script>
+const SEAT = {{ seat }};
+const MIN_SCORE = 1.0;
+const MAX_SCORE = 25.0;
+const DEFAULT_SCORE = 19.0;
+const OUTCOME_LABELS = {{ outcomes|tojson }};
+const HEAD_CATCH_CODE = {{ head_catch_code|tojson }};
+let timedEntryId = null;
+let timedSubmitting = false;
+// These outcomes mean there's no rider score at all. RR is deliberately
+// excluded -- a re-ride still carries a real rider score; it's the
+// cowboy's call (via the scorekeeper) whether to keep it.
+const NO_RIDER_SCORE_OUTCOMES = {{ no_rider_score_outcomes|tojson }};
+
+let currentEntryId = null;
+let riderScore = DEFAULT_SCORE;
+let stockScore = DEFAULT_SCORE;
+let selectedOutcome = null;
+let submitted = false;
+let submitting = false;
+
+// The one place that changes both the `submitted` flag and the
+// at-a-glance background color together, so the two can never drift
+// out of sync with each other.
+function setSubmitted(value) {
+  submitted = value;
+  document.body.classList.toggle('judge-unsubmitted', !value);
+  document.body.classList.toggle('judge-submitted', value);
+}
+
+function clampScore(v) {
+  return Math.max(MIN_SCORE, Math.min(MAX_SCORE, v));
+}
+
+function riderDisabled() {
+  return selectedOutcome !== null && NO_RIDER_SCORE_OUTCOMES.includes(selectedOutcome);
+}
+
+function renderScores() {
+  document.getElementById('rider-score').textContent = riderScore.toFixed(1);
+  document.getElementById('stock-score').textContent = stockScore.toFixed(1);
+  document.getElementById('rider-minus').disabled = riderDisabled() || (riderScore <= MIN_SCORE);
+  document.getElementById('rider-plus').disabled = riderDisabled() || (riderScore >= MAX_SCORE);
+  document.getElementById('stock-minus').disabled = (stockScore <= MIN_SCORE);
+  document.getElementById('stock-plus').disabled = (stockScore >= MAX_SCORE);
+}
+
+// Only the rider block ever dims -- BO/NS/DQ mean there's no rider
+// score to give, so it's disabled for those. RR does NOT dim it (a
+// re-ride still gets a real rider score). Stock is never touched here.
+function renderOutcomeButtons() {
+  document.querySelectorAll('.outcome-btn').forEach(btn => {
+    btn.classList.toggle('selected', btn.dataset.outcome === selectedOutcome);
+  });
+  document.getElementById('rider-score-block').classList.toggle('dimmed', riderDisabled());
+}
+
+function updateSubmitState() {
+  const btn = document.getElementById('submit-btn');
+  const status = document.getElementById('submit-status');
+  const label = selectedOutcome ? (OUTCOME_LABELS[selectedOutcome] || selectedOutcome) : null;
+  if (submitted) {
+    btn.textContent = 'Update Score';
+    status.textContent = label
+      ? `Submitted (${label}) — you can still change this until the scorekeeper finalizes it.`
+      : 'Submitted — you can still adjust and resubmit until the scorekeeper finalizes it.';
+    status.style.display = 'block';
+  } else {
+    btn.textContent = label ? `Submit (${label})` : 'Submit Score';
+    status.style.display = 'none';
+  }
+}
+
+// A tap after already submitting means there's now an unsaved change --
+// reflect that in the button/status right away rather than letting the
+// screen keep claiming "Submitted" once it no longer matches what was
+// actually sent.
+function markDirty() {
+  if (submitted) {
+    setSubmitted(false);
+    updateSubmitState();
+  }
+}
+
+function renderTimedState(data) {
+  document.getElementById('timed-draw-number').textContent = data.draw_number ? ('Draw #' + data.draw_number) : '';
+  document.getElementById('timed-event-round').textContent = [data.event_name, data.round_name].filter(Boolean).join(' — ');
+  document.getElementById('timed-rider-name').textContent = data.rider_name || '';
+  document.getElementById('timed-rider-hometown').textContent = data.rider_hometown || '';
+  // "Partner" here is the heeler on a team event -- the header is
+  // already shown as the main name above, and One Heel concerns
+  // whoever's heeling, not the header.
+  document.getElementById('timed-partner-name').textContent = data.is_team ? (data.partner_name || '') : '';
+
+  timedEntryId = data.entry_id;
+  const noteParts = [];
+  if (data.penalty_note) noteParts.push(data.penalty_note);
+  if (data.pending_penalty > 0) noteParts.push(`${data.pending_penalty_note} (pending)`);
+  document.getElementById('timed-current-display').textContent = data.display || '—';
+  document.getElementById('timed-current-note').textContent = noteParts.join(' · ');
+}
+
+function pollState() {
+  fetch(`/judge/${SEAT}/state`)
+    .then(r => r.json())
+    .then(data => {
+      if (!data.ok) return;
+      const waitingEl = document.getElementById('waiting');
+      const scoringEl = document.getElementById('scoring-area');
+      const timedEl = document.getElementById('timed-area');
+
+      if (!data.judgeable) {
+        waitingEl.style.display = 'flex';
+        scoringEl.style.display = 'none';
+        timedEl.style.display = 'none';
+        currentEntryId = null;
+        timedEntryId = null;
+        // Nothing to score yet -- neutral background, not red. Red
+        // would wrongly read as "you owe a score" when there's simply
+        // no contestant up at all.
+        document.body.classList.remove('judge-unsubmitted', 'judge-submitted');
+        return;
+      }
+
+      if (data.mode === 'timed') {
+        waitingEl.style.display = 'none';
+        scoringEl.style.display = 'none';
+        timedEl.style.display = 'block';
+        // Timed penalties apply immediately -- there's no "submitted vs
+        // not" state to track, so the background never turns red here.
+        document.body.classList.remove('judge-unsubmitted', 'judge-submitted');
+        renderTimedState(data);
+        return;
+      }
+
+      waitingEl.style.display = 'none';
+      timedEl.style.display = 'none';
+      scoringEl.style.display = 'block';
+
+      document.getElementById('rider-name').textContent = data.rider_name || '';
+      document.getElementById('rider-hometown').textContent = data.rider_hometown || '';
+      document.getElementById('stock-name').textContent = data.stock_name || '';
+      document.getElementById('draw-number').textContent = data.draw_number ? ('Draw #' + data.draw_number) : '';
+      document.getElementById('event-round').textContent = [data.event_name, data.round_name].filter(Boolean).join(' — ');
+
+      // Only reset the score entry when the contestant actually changes --
+      // never while the judge is mid-adjustment on the one currently up,
+      // even though this poll runs every few seconds regardless.
+      if (data.entry_id !== currentEntryId) {
+        currentEntryId = data.entry_id;
+        if (data.already_submitted) {
+          // Revisiting an entry this seat already scored (e.g. the
+          // scorekeeper backed up) shows what was actually sent, not a
+          // fresh default. Stock always restores if present; rider only
+          // restores when it wasn't a no-rider-score outcome.
+          selectedOutcome = data.my_outcome || null;
+          stockScore = (data.my_stock_score !== null && data.my_stock_score !== undefined) ? data.my_stock_score : DEFAULT_SCORE;
+          riderScore = (data.my_rider_score !== null && data.my_rider_score !== undefined) ? data.my_rider_score : DEFAULT_SCORE;
+          setSubmitted(true);
+        } else {
+          selectedOutcome = null;
+          riderScore = DEFAULT_SCORE;
+          stockScore = DEFAULT_SCORE;
+          setSubmitted(false);
+        }
+        document.getElementById('judge-error').textContent = '';
+        renderScores();
+        renderOutcomeButtons();
+        updateSubmitState();
+      }
+    })
+    .catch(() => {});
+}
+
+document.getElementById('rider-minus').addEventListener('click', function() {
+  if (riderDisabled()) return;
+  riderScore = clampScore(riderScore - 0.5); renderScores(); markDirty();
+});
+document.getElementById('rider-plus').addEventListener('click', function() {
+  if (riderDisabled()) return;
+  riderScore = clampScore(riderScore + 0.5); renderScores(); markDirty();
+});
+document.getElementById('stock-minus').addEventListener('click', function() {
+  stockScore = clampScore(stockScore - 0.5); renderScores(); markDirty();
+});
+document.getElementById('stock-plus').addEventListener('click', function() {
+  stockScore = clampScore(stockScore + 0.5); renderScores(); markDirty();
+});
+
+document.querySelectorAll('.outcome-btn').forEach(btn => {
+  btn.addEventListener('click', function() {
+    selectedOutcome = (selectedOutcome === btn.dataset.outcome) ? null : btn.dataset.outcome;
+    renderScores();
+    renderOutcomeButtons();
+    setSubmitted(false);
+    updateSubmitState();
+  });
+});
+
+document.getElementById('submit-btn').addEventListener('click', function() {
+  if (!currentEntryId || submitting) return;
+  submitting = true;
+  const btn = this;
+  const errorEl = document.getElementById('judge-error');
+  btn.disabled = true;
+  let body = `entry_id=${currentEntryId}&stock_score=${stockScore}`;
+  if (!riderDisabled()) {
+    body += `&rider_score=${riderScore}`;
+  }
+  if (selectedOutcome) {
+    body += `&outcome=${selectedOutcome}`;
+  }
+  fetch(`/judge/${SEAT}/submit`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+    body: body
+  })
+  .then(r => r.json())
+  .then(data => {
+    submitting = false;
+    btn.disabled = false;
+    if (data.ok) {
+      errorEl.textContent = '';
+      setSubmitted(true);
+      updateSubmitState();
+    } else {
+      errorEl.textContent = data.error || 'Could not submit — try again.';
+    }
+  })
+  .catch(() => {
+    submitting = false;
+    btn.disabled = false;
+    errorEl.textContent = 'Could not reach the server — check your connection.';
+  });
+});
+
+document.querySelectorAll('.timed-penalty-btn').forEach(btn => {
+  btn.addEventListener('click', function() {
+    if (!timedEntryId || timedSubmitting) return;
+    timedSubmitting = true;
+    document.querySelectorAll('.timed-penalty-btn').forEach(b => b.disabled = true);
+    const errorEl = document.getElementById('timed-error');
+    const statusEl = document.getElementById('timed-status');
+    const code = btn.dataset.code;
+    fetch(`/judge/${SEAT}/timed_penalty`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+      body: `entry_id=${timedEntryId}&code=${encodeURIComponent(code)}`
+    })
+    .then(r => r.json())
+    .then(data => {
+      timedSubmitting = false;
+      document.querySelectorAll('.timed-penalty-btn').forEach(b => b.disabled = false);
+      if (data.ok) {
+        errorEl.textContent = '';
+        statusEl.textContent = `Flagged: ${btn.textContent.replace(/\s+/g, ' ').trim()}`;
+        statusEl.style.display = 'block';
+        document.getElementById('timed-current-display').textContent = data.display || '—';
+        const noteParts = [];
+        if (data.penalty_note) noteParts.push(data.penalty_note);
+        if (data.pending_penalty > 0) noteParts.push(`${data.pending_penalty_note} (pending)`);
+        document.getElementById('timed-current-note').textContent = noteParts.join(' · ');
+      } else {
+        errorEl.textContent = data.error || 'Could not submit — try again.';
+      }
+    })
+    .catch(() => {
+      timedSubmitting = false;
+      document.querySelectorAll('.timed-penalty-btn').forEach(b => b.disabled = false);
+      errorEl.textContent = 'Could not reach the server — check your connection.';
+    });
+  });
+});
+
+renderScores();
+renderOutcomeButtons();
+pollState();
+setInterval(pollState, 2500);
+
+// Belt-and-suspenders on top of the touch-action CSS: iOS Safari/Chrome
+// (both WebKit) expose pinch gestures as their own gesturestart/
+// gesturechange events regardless of touch-action, and older iOS
+// versions have historically ignored the viewport meta tag's zoom
+// restrictions outright. Blocking these directly is the most reliable
+// way to actually stop pinch-zoom on this page.
+document.addEventListener('gesturestart', function(e) { e.preventDefault(); });
+document.addEventListener('gesturechange', function(e) { e.preventDefault(); });
+</script>
+</body>
+</html>

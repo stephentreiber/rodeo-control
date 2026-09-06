@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Events
+  <span class="tip" tabindex="0">?
+    <span class="tip-bubble">Reorder events with the arrows, rename by editing the name box, or change scoring type
+    from the dropdown — each saves as soon as you click away or make a selection.</span>
+  </span>
+</h1>
+
+<form method="post" class="card-form">
+  <label>Event Name
+    <input name="name" list="standard-events" placeholder="Type or pick a standard event" required>
+    <datalist id="standard-events">
+      {% for s in standard_events %}<option value="{{ s }}">{% endfor %}
+    </datalist>
+  </label>
+  <label>Scoring Type</label>
+  <label class="inline"><input type="radio" name="scoring_type" value="judged" checked> Judged (0-100, higher wins)</label>
+  <label class="inline"><input type="radio" name="scoring_type" value="timed"> Timed - seconds (lower wins)</label>
+  <label class="inline"><input type="radio" name="scoring_type" value="timed_mmss"> Timed - minutes:seconds (lower wins)</label>
+  <label class="inline"><input type="checkbox" name="is_team"> This is a team event (e.g. Team Roping) — shows a Heeler column instead of Draw Animal</label>
+  <button type="submit">Add Event</button>
+</form>
+
+<table class="list">
+  <tr><th></th><th>Event Name</th><th>Scoring</th><th>Team?</th><th></th></tr>
+  {% for e in events %}
+  <tr>
+    <td>
+      <form style="display:inline" method="post" action="{{ url_for('move_event', eid=e.id, direction='up') }}"><button class="tiny" type="submit">↑</button></form>
+      <form style="display:inline" method="post" action="{{ url_for('move_event', eid=e.id, direction='down') }}"><button class="tiny" type="submit">↓</button></form>
+    </td>
+    <td>
+      <form method="post" action="{{ url_for('update_event_name', eid=e.id) }}" style="margin:0;">
+        <input type="text" name="name" value="{{ e.name }}" onchange="this.form.submit()" style="width: 240px;">
+      </form>
+    </td>
+    <td>
+      <form method="post" action="{{ url_for('update_scoring_type', eid=e.id) }}" class="inline-form" style="margin:0;">
+        <select name="scoring_type" onchange="this.form.submit()">
+          {% for key, label in SCORING_TYPES.items() %}
+          <option value="{{ key }}" {{ 'selected' if e.scoring_type == key }}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </form>
+    </td>
+    <td>
+      <form method="post" action="{{ url_for('toggle_is_team', eid=e.id) }}">
+        <button class="tiny" type="submit" title="Shows a Heeler column instead of Draw Animal">
+          {{ 'Team ✓' if e.is_team else 'Solo' }}
+        </button>
+      </form>
+    </td>
+    <td>
+      <a class="row-action" href="{{ url_for('event_detail', eid=e.id) }}">Rounds</a>
+      <a class="row-action" href="{{ url_for('leaderboards', eid=e.id) }}">Leaderboards</a>
+      <form style="display:inline" method="post" action="{{ url_for('delete_event', eid=e.id) }}" onsubmit="return confirm('Delete this event and all its rounds/scores?');">
+        <button class="danger" type="submit">Delete</button>
+      </form>
+    </td>
+  </tr>
+  {% endfor %}
+</table>
+{% endblock %}

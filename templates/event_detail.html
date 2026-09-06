@@ -1,0 +1,1417 @@
+{% extends "base.html" %}
+
+{% block subnav %}
+{% include "_event_tabs.html" %}
+<div class="round-tabs">
+  {% for r in rounds %}
+  <a class="round-tab {{ 'active' if current_round_key == r.id|string }}" title="{{ r.name }}"
+     href="{{ url_for('event_detail', eid=event.id, round=r.id) }}"><span class="round-tab-name">{{ r.name }}</span> <span class="round-num-tag">#{{ r.round_number }}</span></a>
+  {% endfor %}
+  <a class="round-tab {{ 'active' if current_round_key == 'all' }}"
+     href="{{ url_for('event_detail', eid=event.id, round='all') }}">All Rounds</a>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="event-header">
+  <h1>{{ event.name }} <small>({{ scoring_short_label(event.scoring_type) }})</small>
+    <span class="tip" tabindex="0">?
+      <span class="tip-bubble">
+        Type a {{ 'time' if is_timed(event.scoring_type) else 'score' }} or a code
+        (<code>NS</code> No Score, <code>BO</code> Buck Off, <code>MO</code> Missed Out, <code>NT</code> No Time,
+        <code>DQ</code> DQ, <code>DNS</code> No Show, <code>DG</code> Double Grab, <code>RR</code> Re-Ride,
+        <code>SLAP</code> Slapped Animal{% if enable_video_review %}, <code>VR</code> Video Review{% endif %}),
+        then hit <strong>Enter</strong> — it saves instantly.
+        {% if event.scoring_type == 'timed_mmss' %}Enter times as <code>M:SS</code> or <code>M:SS.ss</code>
+        (e.g. <code>1:23.45</code>) — plain seconds also work.{% endif %}
+        {% if panel_entries %}In the Current Contestant panel above, Enter saves the score but stays on that
+        contestant — it won't jump to the next one, so there's time to read the score on the Announcer Screen
+        first. Use the Previous/Next buttons or the arrow keys (when not typing in a field) to move on when
+        you're ready — moving also updates Who's Up. Elsewhere in the draw list below, Enter still saves and
+        moves keyboard focus down to the next row.{% endif %}
+      </span>
+    </span>
+  </h1>
+  {% if current_round_key != 'all' and current_round %}
+  <form method="post" action="{{ url_for('toggle_round_lock', rid=current_round.id) }}" class="lock-form">
+    <button type="submit" class="lock-toggle-btn" title="{{ 'Locked — click to unlock' if current_round.locked else 'Unlocked — click to lock' }}">
+      {{ '🔒' if current_round.locked else '🔓' }}
+    </button>
+    <span class="tip tip-right" tabindex="0">?
+      <span class="tip-bubble">Name, hometown, and stock are locked for this round. Scores are never locked.</span>
+    </span>
+  </form>
+  {% endif %}
+</div>
+
+{% if hide_contestant_panel %}
+<div class="contestant-panel-collapsed">
+  <span>Current Contestant panel is hidden.</span>
+  <form method="post" action="{{ url_for('toggle_contestant_panel') }}">
+    <button type="submit" class="tiny">Show panel</button>
+  </form>
+</div>
+{% else %}
+<div class="contestant-panel-waiting" id="contestant-panel-waiting" {{ ('' if not panel_entries else 'style="display:none;"')|safe }}>
+  No one is currently set as Who's Up.
+</div>
+<div class="contestant-panel" id="contestant-panel" {{ ('style="display:none;"' if not panel_entries else '')|safe }}>
+  <div class="cp-header">
+    <div class="cp-header-left">
+      <span id="cp-position"></span>
+      <span id="cp-draw-number"></span>
+      <span id="cp-event-context" class="cp-event-context">{{ panel_event_name }}</span>
+    </div>
+    <form method="post" action="{{ url_for('toggle_contestant_panel') }}" class="cp-hide-form">
+      <button type="submit" class="cp-hide-btn" title="Hide this panel — you can still score from the draw table below">Hide ▾</button>
+    </form>
+  </div>
+  <div class="cp-body">
+    <div class="cp-name-block">
+      <div class="cp-name" id="cp-name"></div>
+      <div class="cp-hometown" id="cp-hometown"></div>
+    </div>
+    <div class="cp-stock-block">
+      <span class="cp-stock-label" id="cp-stock-label">{{ 'Heeler' if panel_is_team_event else 'Draw Animal' }}</span>
+      <div class="cp-stock-value" id="cp-stock-value"></div>
+      <div class="cp-stock-sub" id="cp-stock-sub"></div>
+    </div>
+    <div class="cp-score-block">
+      <div class="cp-score-row">
+        <input type="text" id="cp-score-input" class="score-input cp-score-input"
+               placeholder="{{ 'time' if is_timed(panel_scoring_type) else 'score' }}" autocomplete="off">
+        <span class="cp-penalty-note" id="cp-penalty-note"></span>
+      </div>
+      <div class="cp-penalty-buttons" id="cp-penalty-buttons" {{ ('style="display:none;"' if not is_timed(panel_scoring_type) else '')|safe }}>
+        <button type="button" class="tiny penalty-btn" data-penalty="5">+5</button>
+        <button type="button" class="tiny penalty-btn" data-penalty="10">+10</button>
+        <span class="cp-pending-penalty" id="cp-pending-penalty"></span>
+      </div>
+      <span class="error-label" id="cp-error"></span>
+    </div>
+  </div>
+  <div class="cp-judges" id="cp-judges" {{ ('style="display:none;"' if panel_scoring_type != 'judged' else '')|safe }}>
+    <div class="cp-judges-label">Judges</div>
+    <div class="cp-judges-grid" id="cp-judges-grid"></div>
+    <div class="cp-finalize-row">
+      <button type="button" id="cp-finalize-btn" class="cp-finalize-btn" disabled>Finalize Score</button>
+      <p id="cp-finalize-status" class="cp-finalize-status"></p>
+      <button type="button" id="cp-take-rr-btn" class="cp-finalize-btn cp-take-rr-btn" style="display:none;">Take Re-Ride</button>
+      <button type="button" id="cp-resolve-vr-btn" class="cp-finalize-btn cp-resolve-vr-btn" style="display:none;">Confirm Score</button>
+    </div>
+  </div>
+  <div class="cp-nav">
+    <button type="button" id="cp-prev" class="cp-nav-btn">← Previous</button>
+    <button type="button" id="cp-next" class="cp-nav-btn">Next →</button>
+  </div>
+</div>
+{% endif %}
+
+{% if rounds %}
+
+<table class="list scoring-table" {% if current_round_key != 'all' %}data-round-id="{{ current_round.id }}"{% endif %}>
+  <tr>
+    <th>#</th><th>Draw #</th>
+    {% if current_round_key == 'all' %}<th>Round</th>{% endif %}
+    <th>Competitor</th><th>{{ 'Heeler' if is_team_event else 'Draw Animal' }}</th><th>Score</th><th>Who's Up</th><th></th>
+  </tr>
+  {% for e in entries %}
+  <tr class="row-{{ e.status }} {{ 'live' if e.id == whos_up_entry_id }} {{ 'draggable-row' if current_round_key != 'all' }}" data-entry-id="{{ e.id }}">
+    <td>
+      <span class="row-num">{{ loop.index }}</span>
+      {% if current_round_key != 'all' %}
+      <span class="drag-handle" title="Drag to reorder">⠿</span>
+      <form style="display:inline" method="post" action="{{ url_for('move_entry', eid=e.id, direction='up') }}"><button class="tiny" type="submit">↑</button></form>
+      <form style="display:inline" method="post" action="{{ url_for('move_entry', eid=e.id, direction='down') }}"><button class="tiny" type="submit">↓</button></form>
+      {% endif %}
+    </td>
+    <td>{{ e.draw_number if e.draw_number is not none else '' }}</td>
+    {% if current_round_key == 'all' %}<td>{{ e.round_name }}</td>{% endif %}
+    <td class="editable-cell">
+      <input type="text" class="edit-field name-field" value="{{ e.name }}" {{ 'disabled' if e.round_locked }}
+             data-endpoint="/competitors/{{ e.competitor_id }}/update_field" data-field="name" data-competitor-id="{{ e.competitor_id }}">
+      <input type="text" class="edit-field hometown-field" value="{{ e.hometown }}" placeholder="hometown" {{ 'disabled' if e.round_locked }}
+             data-endpoint="/competitors/{{ e.competitor_id }}/update_field" data-field="hometown" data-competitor-id="{{ e.competitor_id }}">
+    </td>
+    {% if is_team_event %}
+    <td class="editable-cell">
+      {% if e.partner_id %}
+      <input type="text" class="edit-field name-field" value="{{ e.partner }}" {{ 'disabled' if e.round_locked }}
+             data-endpoint="/competitors/{{ e.partner_id }}/update_field" data-field="name" data-competitor-id="{{ e.partner_id }}">
+      <input type="text" class="edit-field hometown-field" value="{{ e.partner_hometown }}" placeholder="hometown" {{ 'disabled' if e.round_locked }}
+             data-endpoint="/competitors/{{ e.partner_id }}/update_field" data-field="hometown" data-competitor-id="{{ e.partner_id }}">
+      {% else %}
+      <small><em>no partner linked</em></small>
+      {% endif %}
+    </td>
+    {% else %}
+    <td class="editable-cell">
+      <input type="text" class="edit-field" value="{{ e.draw_animal }}" placeholder="stock" {{ 'disabled' if e.round_locked }}
+             data-endpoint="/entries/{{ e.id }}/update_draw_animal">
+    </td>
+    {% endif %}
+    <td>
+      <input type="text" class="score-input" id="score-{{ e.id }}" data-entry-id="{{ e.id }}"
+             data-scoring-type="{{ event.scoring_type }}"
+             value="{{ e.display }}" placeholder="{{ 'time' if is_timed(event.scoring_type) else 'score' }}"
+             autocomplete="off">
+      {% if is_timed(event.scoring_type) %}
+      <span class="penalty-controls">
+        <button type="button" class="tiny penalty-btn" data-penalty="5">+5</button>
+        <button type="button" class="tiny penalty-btn" data-penalty="10">+10</button>
+        <span class="cp-pending-penalty" id="pending-{{ e.id }}"></span>
+      </span>
+      {% endif %}
+      <span class="row-penalty-note" id="penalty-note-{{ e.id }}">{{ e.penalty_note }}</span>
+      {% if e.status == 'scored' and e.has_rr_flag and not e.re_ride_taken %}
+      <button type="button" class="tiny danger take-re-ride-btn" data-entry-id="{{ e.id }}"
+              title="A judge flagged this ride as a re-ride. Click to give up the score and mark it taken.">Take RR</button>
+      {% endif %}
+      {% if e.status == 'video_review' and e.pending_score is not none %}
+      <button type="button" class="tiny resolve-vr-btn" data-entry-id="{{ e.id }}"
+              title="Confirms the video review didn't change the score.">Confirm {{ '%.1f'|format(e.pending_score) }}</button>
+      {% endif %}
+
+      <span class="error-label" id="error-{{ e.id }}"></span>
+    </td>
+    <td class="whos-up-cell">
+      {% if e.id == whos_up_entry_id %}
+        <span class="badge">LIVE</span>
+      {% else %}
+        <button type="button" class="set-whos-up-btn" data-entry-id="{{ e.id }}">Set Who's Up</button>
+      {% endif %}
+    </td>
+    <td>
+      {% if not e.round_locked %}
+      <form method="post" action="{{ url_for('remove_entry', eid=e.id) }}" onsubmit="return confirm('Remove from draw?');">
+        <button class="icon-btn" type="submit" title="Remove from draw">🗑</button>
+      </form>
+      {% else %}
+      <span class="icon-btn-disabled" title="Round is locked — unlock to remove">🗑</span>
+      {% endif %}
+    </td>
+  </tr>
+  {% endfor %}
+</table>
+{% else %}
+<p><em>No rounds yet — add one below to start building the draw.</em></p>
+{% endif %}
+
+<p><a href="{{ url_for('leaderboards', eid=event.id) }}">Go to leaderboards for this event →</a></p>
+{% if not is_timed(event.scoring_type) %}
+<p><a href="{{ url_for('judge_scores_table', eid=event.id) }}">See/edit every judge's scores for this event →</a></p>
+{% endif %}
+
+<div class="round-admin-box">
+  <div class="round-admin-col">
+    <h2>Round setup</h2>
+
+    <form method="post" action="{{ url_for('add_round', eid=event.id) }}" class="inline-form">
+      <label>New Round Name <input name="name" placeholder="e.g. Perf #1 6:30PM — Thu Jun 25"></label>
+      <label>Round # <select name="round_number">
+        <option value="">auto</option>
+        {% for n in range(1, 11) %}<option value="{{ n }}">{{ n }}</option>{% endfor %}
+      </select></label>
+      <button type="submit">+ Add Round</button>
+    </form>
+  </div>
+
+  {% if current_round_key != 'all' and current_round %}
+  <div class="round-admin-col">
+    <h2>Add competitor to draw</h2>
+    <form method="post" action="{{ url_for('add_late_entry', rid=current_round.id) }}" class="inline-form">
+      <button type="submit" class="button-primary">+ Add Late Entry</button>
+    </form>
+    <form method="post" action="{{ url_for('add_to_round', rid=current_round.id) }}" class="inline-form">
+      <select name="competitor_id" required>
+        <option value="">Select competitor...</option>
+        {% for c in available %}
+        <option value="{{ c.id }}">{{ c.name }}{% if c.hometown %} ({{ c.hometown }}){% endif %}</option>
+        {% endfor %}
+      </select>
+      <button type="submit">+ Add to Draw</button>
+    </form>
+  </div>
+
+  <div class="round-admin-col">
+    <h2>Edit this round</h2>
+    <form method="post" action="{{ url_for('update_round', rid=current_round.id) }}" class="inline-form">
+      <label>Round Name <input name="name" value="{{ current_round.name }}"></label>
+      <label>Round # <select name="round_number">
+        {% for n in range(1, 11) %}<option value="{{ n }}" {{ 'selected' if current_round.round_number == n }}>{{ n }}</option>{% endfor %}
+      </select></label>
+      <button type="submit">Save</button>
+    </form>
+    <form method="post" action="{{ url_for('delete_round', rid=current_round.id) }}" onsubmit="return confirm('Delete this round and its scores?');">
+      <button class="danger tiny" type="submit">Delete This Round</button>
+    </form>
+  </div>
+  {% endif %}
+</div>
+
+<script>
+// ---------- Current Contestant panel ----------
+// The panel is deliberately independent of whichever round/event this
+// page happens to be showing -- these all describe whoever is
+// genuinely live (see _get_live_panel_context in app.py), rendered
+// server-side for the first paint and then kept current by
+// cpRefreshPanelContext() below whenever Who's Up changes to someone
+// outside this list (e.g. the scorekeeper clicked "Set Who's Up" on a
+// row from a completely different round while browsing elsewhere).
+let CP_ENTRIES = {{ panel_entries|tojson }};
+let CP_IS_TEAM = {{ 'true' if panel_is_team_event else 'false' }};
+let CP_SCORING_TYPE = {{ panel_scoring_type|tojson }};
+let CP_EVENT_NAME = {{ panel_event_name|tojson }};
+let CP_INDEX = {{ current_index }};
+const CP_JUDGE_OUTCOME_LABELS = {{ judge_outcomes|tojson }};
+const CP_NO_RIDER_SCORE_OUTCOMES = {{ no_rider_score_outcomes|tojson }};
+const CP_JUDGE_NAMES = {{ judge_names|tojson }};
+// The genuinely-confirmed-by-the-server Who's Up entry -- separate from
+// CP_INDEX, which is just "what position the panel is currently
+// displaying" and may default to this round's first entry purely for
+// display purposes even when nobody in this round is actually live
+// (e.g. Who's Up still points at a different round entirely). Only
+// ever updated here when we've actually just told the server to change
+// Who's Up -- never assumed from whatever the panel happens to show.
+let CP_TRUE_LIVE_ENTRY_ID = {{ whos_up_entry_id if whos_up_entry_id else 'null' }};
+
+// A penalty clicked before any time is saved yet (or before a freshly
+// typed time is saved) can't be sent to add_penalty -- that endpoint
+// requires an existing scored entry to add on top of. So it's staged
+// here instead and applied automatically the moment a time is saved,
+// whether that's via the penalty button itself (if a time is already
+// sitting typed in the box) or via Enter. Reset whenever the panel
+// moves to a different entry.
+let cpStagedPenalty = 0;
+// Tracks whether the box currently holds something the operator typed,
+// as opposed to just the last saved/rendered value sitting there
+// untouched -- so clicking a penalty button knows whether to treat the
+// box contents as "resave this" or "nothing new, just apply the
+// penalty." Without this, clicking a penalty a second time (with the
+// box still showing the already-penalized total) would resubmit that
+// total as a brand new raw time and wipe the raw/penalty breakdown.
+let cpInputDirty = false;
+
+function cpUpdatePendingPenaltyBadge() {
+  const badge = document.getElementById('cp-pending-penalty');
+  const noteEl = document.getElementById('cp-penalty-note');
+  if (!badge) return;
+  // Two independent sources of "pending": cpStagedPenalty (this browser's
+  // own +5/+10 click, waiting on a time to be saved before it can post to
+  // add_penalty) and the current entry's server-side pending_penalty (a
+  // judge flagged Barrier/One Heel on their own device -- see
+  // judge_timed_penalty). Both fold into the same score the moment a time
+  // is saved, so both show here together.
+  const e = CP_ENTRIES[CP_INDEX];
+  const judgePending = e ? (e.pending_penalty || 0) : 0;
+  const total = cpStagedPenalty + judgePending;
+  if (total > 0) {
+    const parts = [];
+    if (cpStagedPenalty > 0) parts.push(`+${cpStagedPenalty}`);
+    if (judgePending > 0) parts.push(e.pending_penalty_note || `+${judgePending}`);
+    badge.textContent = `${parts.join(', ')} pending`;
+  } else {
+    badge.textContent = '';
+  }
+  if (noteEl) noteEl.textContent = (e && e.penalty_note) ? e.penalty_note : '';
+}
+
+function cpRender() {
+  const panel = document.getElementById('contestant-panel');
+  const waiting = document.getElementById('contestant-panel-waiting');
+  if (!CP_ENTRIES.length) {
+    // Nobody's live -- show the waiting placeholder instead, if the
+    // panel isn't hidden by the operator (in which case neither of
+    // these elements exist at all).
+    if (panel) panel.style.display = 'none';
+    if (waiting) waiting.style.display = '';
+    syncTableLiveRow(CP_TRUE_LIVE_ENTRY_ID);
+    return;
+  }
+  const e = CP_ENTRIES[CP_INDEX];
+  // The panel can be hidden (operator preference -- see the "Hide"
+  // button and Settings), in which case none of these elements exist.
+  // Navigation, staging, and Who's Up still work either way -- only the
+  // panel's own painting is skipped -- so the table's LIVE badge below
+  // always gets updated regardless.
+  if (panel) {
+    panel.style.display = '';
+    if (waiting) waiting.style.display = 'none';
+    document.getElementById('cp-position').textContent = (CP_INDEX + 1) + ' of ' + CP_ENTRIES.length;
+    document.getElementById('cp-draw-number').textContent = e.draw_number ? ('Draw #' + e.draw_number) : '';
+    const eventContextEl = document.getElementById('cp-event-context');
+    if (eventContextEl) eventContextEl.textContent = CP_EVENT_NAME || '';
+    document.getElementById('cp-name').textContent = e.name || '';
+    document.getElementById('cp-hometown').textContent = e.hometown || '';
+    const stockLabelEl = document.getElementById('cp-stock-label');
+    if (stockLabelEl) stockLabelEl.textContent = CP_IS_TEAM ? 'Heeler' : 'Draw Animal';
+    if (CP_IS_TEAM) {
+      document.getElementById('cp-stock-value').textContent = e.partner || '';
+      document.getElementById('cp-stock-sub').textContent = e.partner_hometown || '';
+    } else {
+      document.getElementById('cp-stock-value').textContent = e.draw_animal || '';
+      document.getElementById('cp-stock-sub').textContent = '';
+    }
+    const scoreInput = document.getElementById('cp-score-input');
+    const isTimedEvent = (CP_SCORING_TYPE === 'timed' || CP_SCORING_TYPE === 'timed_mmss');
+    scoreInput.placeholder = isTimedEvent ? 'time' : 'score';
+    const penaltyBlock = document.getElementById('cp-penalty-buttons');
+    if (penaltyBlock) penaltyBlock.style.display = isTimedEvent ? '' : 'none';
+    const judgesBlock = document.getElementById('cp-judges');
+    if (judgesBlock) judgesBlock.style.display = (CP_SCORING_TYPE === 'judged') ? '' : 'none';
+    scoreInput.value = e.display || '';
+    scoreInput.dataset.entryId = e.id;
+    cpInputDirty = false;
+    document.getElementById('cp-error').textContent = '';
+    cpStagedPenalty = 0;
+    cpUpdatePendingPenaltyBadge();
+    const takeRrBtn = document.getElementById('cp-take-rr-btn');
+    if (takeRrBtn) {
+      const eligible = e.status === 'scored' && e.has_rr_flag && !e.re_ride_taken;
+      takeRrBtn.style.display = eligible ? '' : 'none';
+      takeRrBtn.dataset.entryId = e.id;
+      takeRrBtn.disabled = false;
+    }
+    const resolveVrBtn = document.getElementById('cp-resolve-vr-btn');
+    if (resolveVrBtn) {
+      const vrEligible = e.status === 'video_review' && e.pending_score !== null && e.pending_score !== undefined;
+      resolveVrBtn.style.display = vrEligible ? '' : 'none';
+      resolveVrBtn.textContent = vrEligible ? `Confirm ${Number(e.pending_score).toFixed(1)}` : 'Confirm Score';
+      resolveVrBtn.dataset.entryId = e.id;
+      resolveVrBtn.disabled = false;
+    }
+    const prevBtn = document.getElementById('cp-prev');
+    const nextBtn = document.getElementById('cp-next');
+    if (prevBtn) prevBtn.disabled = (CP_INDEX <= 0);
+    if (nextBtn) nextBtn.disabled = (CP_INDEX >= CP_ENTRIES.length - 1);
+  }
+  // Only ever mark a row LIVE in the table when it's the genuinely
+  // server-confirmed Who's Up entry -- not just whatever the panel
+  // happens to be displaying right now (CP_INDEX can default to this
+  // round's first entry purely for display purposes when nobody in
+  // this round is actually live yet).
+  syncTableLiveRow(CP_TRUE_LIVE_ENTRY_ID);
+  cpPollJudges();
+  cpPollTimedPenalty();
+}
+
+// Renders each judge's own submission separately -- never merged or
+// averaged here. Different judges can call the same ride differently
+// (one says Buck Off, another gives a real score), so the scorekeeper
+// needs to see what each judge actually sent, not one blended number.
+function cpRenderJudgesGrid(data, entryId) {
+  const grid = document.getElementById('cp-judges-grid');
+  if (!grid) return;
+  if (!data || !data.ok) { grid.innerHTML = ''; return; }
+  let html = '';
+  data.judges.forEach(j => {
+    let body;
+    if (!j.submitted) {
+      body = '<span class="cp-judge-waiting">waiting…</span>';
+    } else if (j.outcome && CP_NO_RIDER_SCORE_OUTCOMES.includes(j.outcome)) {
+      const label = CP_JUDGE_OUTCOME_LABELS[j.outcome] || j.outcome;
+      body = `<span class="cp-judge-outcome" title="${label}">${j.outcome}</span>`
+           + `<span class="cp-judge-nums">Stock ${Number(j.stock_score).toFixed(1)}</span>`;
+    } else if (j.outcome) {
+      const label = CP_JUDGE_OUTCOME_LABELS[j.outcome] || j.outcome;
+      body = `<span class="cp-judge-outcome cp-judge-outcome-flag" title="${label}">${j.outcome}</span>`
+           + `<span class="cp-judge-nums">${Number(j.rider_score).toFixed(1)} / ${Number(j.stock_score).toFixed(1)}</span>`;
+    } else {
+      body = `<span class="cp-judge-nums">${Number(j.rider_score).toFixed(1)} / ${Number(j.stock_score).toFixed(1)}</span>`;
+    }
+    html += `<div class="cp-judge-card${j.submitted ? '' : ' cp-judge-card-waiting'}">`
+          + `<div class="cp-judge-seat">${CP_JUDGE_NAMES[j.seat] || ('Judge ' + j.seat)}</div>${body}</div>`;
+  });
+  grid.innerHTML = html;
+
+  const finalizeBtn = document.getElementById('cp-finalize-btn');
+  const finalizeStatus = document.getElementById('cp-finalize-status');
+  if (finalizeBtn) {
+    const evalResult = cpEvaluateJudges(data);
+    finalizeBtn.disabled = !evalResult.canFinalize;
+    finalizeBtn.textContent = evalResult.label;
+    finalizeBtn.dataset.entryId = entryId;
+    if (finalizeStatus) finalizeStatus.textContent = evalResult.status;
+  }
+}
+
+// Decides whether the judges are in full agreement, and what Finalize
+// would actually produce if clicked -- purely for the button's
+// label/enabled state. The server independently recomputes and
+// re-checks all of this itself before ever writing anything, since
+// this client-side copy is only for display.
+function cpEvaluateJudges(data) {
+  if (!data || !data.ok) return { canFinalize: false, label: 'Finalize Score', status: '' };
+  const submittedCount = data.judges.filter(j => j.submitted).length;
+  if (submittedCount < data.judges.length) {
+    const remaining = data.judges.length - submittedCount;
+    return {
+      canFinalize: false,
+      label: 'Finalize Score',
+      status: `Waiting on ${remaining} more judge${remaining === 1 ? '' : 's'}.`,
+    };
+  }
+  // Only judges who actually called a penalty count toward
+  // "disagreement" here -- a judge who just gave a numeric score isn't
+  // disagreeing, they simply didn't see anything worth flagging. A
+  // penalty called by even one judge overrules everyone else's numeric
+  // score; two DIFFERENT penalties from different judges is the only
+  // thing this can't resolve on its own.
+  const flaggedJudges = data.judges.filter(j => j.outcome);
+  const distinctOutcomes = new Set(flaggedJudges.map(j => j.outcome));
+  if (distinctOutcomes.size > 1) {
+    const parts = flaggedJudges.map(j => `${CP_JUDGE_NAMES[j.seat] || ('Judge ' + j.seat)}: ${j.outcome}`);
+    return {
+      canFinalize: false,
+      label: 'Finalize Score',
+      status: `Judges called different penalties (${parts.join(', ')}) — enter the score manually above.`,
+    };
+  }
+  const outcome = distinctOutcomes.size === 1 ? [...distinctOutcomes][0] : null;
+  if (outcome && CP_NO_RIDER_SCORE_OUTCOMES.includes(outcome)) {
+    return { canFinalize: true, label: `Finalize as ${CP_JUDGE_OUTCOME_LABELS[outcome] || outcome}`, status: '' };
+  }
+  // No penalty call at all, or every flagged judge only flagged Re-Ride
+  // (which still carries a real score) -- combine rider+stock together
+  // per judge, same as the official score everywhere else in the app.
+  const values = data.judges.map(j => Number(j.rider_score) + Number(j.stock_score));
+  const combined = data.judge_count === 2 ? (values[0] + values[1]) : (values.reduce((a, b) => a + b, 0) / values.length);
+  const flag = outcome ? ` (${CP_JUDGE_OUTCOME_LABELS[outcome] || outcome})` : '';
+  return { canFinalize: true, label: `Finalize: ${combined.toFixed(2)}${flag}`, status: '' };
+}
+
+// Polls whichever entry the panel currently has up, so scores appear
+// live as judges submit from their own devices -- not just on
+// navigation. Silently does nothing if this event doesn't use judges
+// (no #cp-judges in the DOM) or nobody's up yet.
+function cpPollJudges() {
+  const grid = document.getElementById('cp-judges-grid');
+  if (!grid || !CP_ENTRIES.length) return;
+  const entry = CP_ENTRIES[CP_INDEX];
+  if (!entry) return;
+  const requestedEntryId = entry.id;
+  fetch(`/entries/${requestedEntryId}/judge_scores`)
+    .then(r => r.json())
+    .then(data => {
+      // The panel may have moved to a different entry while this was
+      // in flight -- ignore a response that no longer matches.
+      const current = CP_ENTRIES[CP_INDEX];
+      if (!current || String(current.id) !== String(requestedEntryId)) return;
+      cpRenderJudgesGrid(data, requestedEntryId);
+    })
+    .catch(() => {});
+}
+
+// Timed-event equivalent of cpPollJudges above -- a judge's Barrier/One
+// Heel/Illegal Head Catch tap (see judge_timed_penalty) lands on a
+// different device than whichever one is showing this page, so without
+// this poll it would only ever show up here after the next full
+// cpRefreshPanelContext cycle (every 8s, and that only repaints the
+// panel, not the draw-sheet row). This keeps both in sync every 3s,
+// same cadence as the judges poll.
+function cpPollTimedPenalty() {
+  const isTimedEvent = (CP_SCORING_TYPE === 'timed' || CP_SCORING_TYPE === 'timed_mmss');
+  if (!isTimedEvent || !CP_TRUE_LIVE_ENTRY_ID) return;
+  const entryId = CP_TRUE_LIVE_ENTRY_ID;
+  fetch(`/entries/${entryId}/live_penalty_state`)
+    .then(r => r.json())
+    .then(data => {
+      if (!data.ok) return;
+      // The live entry may have changed while this was in flight --
+      // ignore a response that no longer matches.
+      if (entryId !== CP_TRUE_LIVE_ENTRY_ID) return;
+
+      const idx = CP_ENTRIES.findIndex(x => String(x.id) === String(entryId));
+      if (idx !== -1) {
+        CP_ENTRIES[idx].display = data.display;
+        CP_ENTRIES[idx].status = data.status;
+        CP_ENTRIES[idx].penalty_note = data.penalty_note;
+        CP_ENTRIES[idx].pending_penalty = data.pending_penalty;
+        CP_ENTRIES[idx].pending_penalty_note = data.pending_penalty_note;
+      }
+
+      // Update the panel itself, but only if it's actually showing this
+      // entry right now, and never stomp something the operator is
+      // mid-typing.
+      if (CP_ENTRIES[CP_INDEX] && String(CP_ENTRIES[CP_INDEX].id) === String(entryId)) {
+        const scoreInput = document.getElementById('cp-score-input');
+        if (scoreInput && !cpInputDirty) scoreInput.value = data.display;
+        cpUpdatePendingPenaltyBadge();
+      }
+
+      // Always update the matching draw-sheet row, regardless of which
+      // entry the panel happens to be showing at the moment.
+      const rowInput = document.getElementById('score-' + entryId);
+      if (rowInput) {
+        rowInput.value = data.display;
+        const row = rowInput.closest('tr');
+        if (row) row.className = row.className.replace(/row-\S+/, '').trim() + ' row-' + data.status;
+      }
+      const noteEl = document.getElementById('penalty-note-' + entryId);
+      if (noteEl) noteEl.textContent = data.penalty_note || '';
+    })
+    .catch(() => {});
+}
+
+// Shared with the table's "Set Who's Up" buttons -- keeps the LIVE badge
+// in the scoring table pointed at whichever entry is currently live,
+// whether that change came from the panel or the table.
+function syncTableLiveRow(entryId) {
+  document.querySelectorAll('tr[data-entry-id]').forEach(row => {
+    const cell = row.querySelector('.whos-up-cell');
+    if (!cell) return;
+    if (row.dataset.entryId === String(entryId)) {
+      row.classList.add('live');
+      cell.innerHTML = '<span class="badge">LIVE</span>';
+    } else if (row.classList.contains('live')) {
+      row.classList.remove('live');
+      cell.innerHTML = `<button type="button" class="set-whos-up-btn" data-entry-id="${row.dataset.entryId}">Set Who's Up</button>`;
+    }
+  });
+}
+
+// Moves the panel to a given index, renders immediately (no waiting on
+// the network -- keyboard-driven navigation needs to feel instant), and
+// persists Who's Up in the background.
+function cpSetCurrent(index) {
+  if (!CP_ENTRIES.length || index < 0 || index >= CP_ENTRIES.length) return;
+  CP_INDEX = index;
+  // This action genuinely is about to make this entry live (the fetch
+  // below tells the server to do exactly that), so it's safe to treat
+  // it as confirmed immediately rather than waiting on the response --
+  // unlike the panel's default display position, which is never
+  // assumed live without this kind of explicit action behind it.
+  CP_TRUE_LIVE_ENTRY_ID = CP_ENTRIES[CP_INDEX].id;
+  cpRender();
+  fetch(`/entries/${CP_ENTRIES[CP_INDEX].id}/set_whos_up_ajax`, { method: 'POST' }).catch(() => {});
+}
+
+// Refetches the panel's whole identity from the server -- used when
+// Who's Up has changed to an entry that isn't in the currently cached
+// CP_ENTRIES at all (e.g. the scorekeeper clicked "Set Who's Up" on a
+// row from a completely different round, or even a different event,
+// than whatever the panel was showing). This is the only path that
+// needs a round trip before rendering; navigating within the panel's
+// own already-loaded round (Prev/Next, Enter-to-advance) stays instant
+// via cpSetCurrent above.
+function cpRefreshPanelContext() {
+  fetch('/whos-up/panel-context')
+    .then(r => r.json())
+    .then(data => {
+      if (!data.ok) return;
+      if (!data.live) {
+        CP_ENTRIES = [];
+        CP_TRUE_LIVE_ENTRY_ID = null;
+        cpRender();  // shows the waiting placeholder and clears any live badge
+        return;
+      }
+      CP_ENTRIES = data.panel_entries;
+      CP_INDEX = data.current_index;
+      CP_IS_TEAM = data.is_team_event;
+      CP_SCORING_TYPE = data.scoring_type;
+      CP_EVENT_NAME = data.event_name;
+      CP_TRUE_LIVE_ENTRY_ID = data.whos_up_entry_id;
+      cpRender();
+    })
+    .catch(() => {});
+}
+
+function cpSaveScore() {
+  const input = document.getElementById('cp-score-input');
+  const entryId = input.dataset.entryId;
+  const typedValue = input.value;
+  return fetch(`/entries/${entryId}/quick_score`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+    body: 'raw=' + encodeURIComponent(typedValue)
+  })
+  .then(r => r.json())
+  .then(data => {
+    const errorLabel = document.getElementById('cp-error');
+    if (data.ok) {
+      errorLabel.textContent = '';
+      input.value = data.display;
+      cpInputDirty = false;
+      input.classList.remove('input-error');
+      input.classList.add('input-saved');
+      setTimeout(() => input.classList.remove('input-saved'), 700);
+      const idx = CP_ENTRIES.findIndex(x => String(x.id) === String(entryId));
+      if (idx !== -1) {
+        CP_ENTRIES[idx].display = data.display;
+        CP_ENTRIES[idx].status = data.status;
+        CP_ENTRIES[idx].penalty_note = data.penalty_note || '';
+      }
+      const noteEl = document.getElementById('cp-penalty-note');
+      if (noteEl) noteEl.textContent = data.penalty_note || '';
+      const rowInput = document.getElementById('score-' + entryId);
+      if (rowInput) {
+        rowInput.value = data.display;
+        const row = rowInput.closest('tr');
+        if (row) row.className = row.className.replace(/row-\S+/, '').trim() + ' row-' + data.status;
+      }
+      const rowNoteEl = document.getElementById('penalty-note-' + entryId);
+      if (rowNoteEl) rowNoteEl.textContent = data.penalty_note || '';
+      return true;
+    } else {
+      input.classList.add('input-error');
+      input.value = typedValue;
+      errorLabel.textContent = data.error || 'Invalid entry';
+      return false;
+    }
+  })
+  .catch(() => {
+    input.classList.add('input-error');
+    document.getElementById('cp-error').textContent = 'Could not save — check the app is still running.';
+    return false;
+  });
+}
+
+// Applies a penalty amount to an already-scored entry. Returns a
+// resolved-boolean promise so callers (Enter, and the penalty button
+// itself) can wait for it before advancing.
+function cpApplyPenalty(entryId, amount) {
+  const input = document.getElementById('cp-score-input');
+  const errorLabel = document.getElementById('cp-error');
+  return fetch(`/entries/${entryId}/add_penalty`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+    body: 'amount=' + encodeURIComponent(amount)
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.ok) {
+      errorLabel.textContent = '';
+      if (input.dataset.entryId === String(entryId)) {
+        input.value = data.display;
+        cpInputDirty = false;
+        input.classList.add('input-saved');
+        setTimeout(() => input.classList.remove('input-saved'), 700);
+        const noteEl = document.getElementById('cp-penalty-note');
+        if (noteEl) noteEl.textContent = data.penalty_note || '';
+      }
+      const idx = CP_ENTRIES.findIndex(x => String(x.id) === String(entryId));
+      if (idx !== -1) {
+        CP_ENTRIES[idx].display = data.display;
+        CP_ENTRIES[idx].penalty_note = data.penalty_note || '';
+      }
+      const rowInput = document.getElementById('score-' + entryId);
+      if (rowInput) rowInput.value = data.display;
+      const rowNoteEl = document.getElementById('penalty-note-' + entryId);
+      if (rowNoteEl) rowNoteEl.textContent = data.penalty_note || '';
+      return true;
+    } else {
+      errorLabel.textContent = data.error || 'Could not add penalty';
+      return false;
+    }
+  })
+  .catch(() => {
+    errorLabel.textContent = 'Could not save — check the app is still running.';
+    return false;
+  });
+}
+
+if (document.getElementById('contestant-panel')) {
+  cpRender();
+  // Keep polling the current entry's judge submissions even without any
+  // navigation happening -- this is what makes marks appear live while
+  // judges are still submitting on their own devices.
+  setInterval(cpPollJudges, 3000);
+  setInterval(cpPollTimedPenalty, 3000);
+  // Also periodically refetch the panel's own identity, in case Who's
+  // Up changed from somewhere this page wasn't directly involved in
+  // (e.g. a second browser tab/window). Cheap, and keeps the panel
+  // self-healing rather than relying purely on catching every possible
+  // trigger for a change.
+  setInterval(cpRefreshPanelContext, 8000);
+
+  const cpScoreInput = document.getElementById('cp-score-input');
+  cpScoreInput.addEventListener('focus', function() { cpScoreInput.select(); });
+  cpScoreInput.addEventListener('input', function() { cpInputDirty = true; });
+  cpScoreInput.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (!cpInputDirty) {
+        // Nothing was actually typed -- this is just a click back into a
+        // field that's already showing a saved (and possibly
+        // already-penalized) value. Re-submitting it would treat that
+        // combined total as a brand new raw time and silently wipe the
+        // penalty breakdown, even though the number on screen wouldn't
+        // change at all. Skip the round trip entirely.
+        return;
+      }
+      // Enter only saves -- it deliberately does NOT advance to the next
+      // contestant anymore. Advancing also flips Who's Up, which is what
+      // the Announcer Screen displays as "current contestant"; auto-
+      // advancing the instant a score is typed gave the announcer no
+      // time to read it before the name changed. Moving on is now always
+      // a separate, deliberate action: the Previous/Next buttons or the
+      // arrow keys (once focus leaves this field).
+      cpSaveScore().then(ok => {
+        if (!ok) return;
+        const entryId = cpScoreInput.dataset.entryId;
+        const clearStaged = () => {
+          cpStagedPenalty = 0;
+          cpUpdatePendingPenaltyBadge();
+        };
+        // A penalty staged before the score landed still applies now,
+        // right after the score itself saves -- same as before, just
+        // without the advance that used to follow it.
+        if (cpStagedPenalty > 0) {
+          cpApplyPenalty(entryId, cpStagedPenalty).then(clearStaged);
+        } else {
+          clearStaged();
+        }
+      });
+    } else if (e.key === 'Escape') {
+      cpScoreInput.blur();
+    }
+  });
+
+  document.querySelectorAll('#contestant-panel .penalty-btn').forEach(btn => {
+    btn.addEventListener('click', function() {
+      const input = document.getElementById('cp-score-input');
+      const entryId = input.dataset.entryId;
+      const amount = parseFloat(btn.dataset.penalty);
+      const entry = CP_ENTRIES.find(x => String(x.id) === String(entryId));
+
+      if (cpInputDirty && input.value.trim() !== '') {
+        // A time was just typed but not saved yet -- save it first, then
+        // apply the penalty on top, in one click.
+        cpSaveScore().then(ok => { if (ok) cpApplyPenalty(entryId, amount); });
+      } else if (entry && entry.status === 'scored') {
+        // Already has a saved time sitting there untouched -- apply
+        // straight away.
+        cpApplyPenalty(entryId, amount);
+      } else {
+        // Nothing typed and nothing saved yet -- stage it, and it'll be
+        // applied automatically once a time comes in and gets saved.
+        cpStagedPenalty += amount;
+        cpUpdatePendingPenaltyBadge();
+      }
+    });
+  });
+
+  document.getElementById('cp-prev').addEventListener('click', function() { cpSetCurrent(CP_INDEX - 1); });
+  document.getElementById('cp-next').addEventListener('click', function() { cpSetCurrent(CP_INDEX + 1); });
+
+  const cpFinalizeBtn = document.getElementById('cp-finalize-btn');
+  if (cpFinalizeBtn) {
+    cpFinalizeBtn.addEventListener('click', function() {
+      const entryId = cpFinalizeBtn.dataset.entryId;
+      const statusEl = document.getElementById('cp-finalize-status');
+      if (!entryId) return;
+      cpFinalizeBtn.disabled = true;
+      fetch(`/entries/${entryId}/finalize_judge_score`, { method: 'POST' })
+        .then(r => r.json())
+        .then(data => {
+          if (data.ok) {
+            if (statusEl) statusEl.textContent = `Finalized: ${data.display}`;
+            const idx = CP_ENTRIES.findIndex(x => String(x.id) === String(entryId));
+            if (idx !== -1) {
+              CP_ENTRIES[idx].display = data.display;
+              CP_ENTRIES[idx].status = data.status;
+              CP_ENTRIES[idx].has_rr_flag = (data.outcome === 'RR');
+              CP_ENTRIES[idx].re_ride_taken = false;  // finalizing always resets this server-side
+            }
+            // syncPanelFromRow is defined further down this file, but by
+            // the time a human can click this button both script blocks
+            // have long since finished executing, so it's already
+            // available here.
+            syncPanelFromRow(entryId, data.display, data.status);
+            if (CP_ENTRIES[CP_INDEX] && String(CP_ENTRIES[CP_INDEX].id) === String(entryId)) {
+              cpRender();  // redraws the Take Re-Ride button's visibility too
+            }
+            const rowInput = document.getElementById('score-' + entryId);
+            if (rowInput) {
+              rowInput.value = data.display;
+              const row = rowInput.closest('tr');
+              if (row) row.className = row.className.replace(/row-\S+/, '').trim() + ' row-' + data.status;
+              // A prior "Take RR" button in the table row is stale once
+              // re-finalized -- it'll reappear on the next page load if
+              // still eligible, but shouldn't linger clickable right now.
+              const staleBtn = row ? row.querySelector('.take-re-ride-btn') : null;
+              if (staleBtn) staleBtn.remove();
+            }
+            // Let the confirmation message sit for a moment before the
+            // next poll (also running on its own 3s interval regardless)
+            // overwrites it with the button's freshly re-evaluated state.
+            setTimeout(cpPollJudges, 2000);
+          } else {
+            if (statusEl) statusEl.textContent = data.error || 'Could not finalize.';
+            cpFinalizeBtn.disabled = false;
+          }
+        })
+        .catch(() => {
+          if (statusEl) statusEl.textContent = 'Could not reach the server — check your connection.';
+          cpFinalizeBtn.disabled = false;
+        });
+    });
+
+    const cpTakeRrBtn = document.getElementById('cp-take-rr-btn');
+    if (cpTakeRrBtn) {
+      cpTakeRrBtn.addEventListener('click', function() {
+        const entryId = cpTakeRrBtn.dataset.entryId;
+        const statusEl = document.getElementById('cp-finalize-status');
+        if (!entryId) return;
+        if (!confirm('Give up this score for a re-ride? The rider will need to come back later on different stock. This can be undone by hitting Finalize Score again once judges resubmit.')) return;
+        cpTakeRrBtn.disabled = true;
+        fetch(`/entries/${entryId}/take_re_ride`, { method: 'POST' })
+          .then(r => r.json())
+          .then(data => {
+            if (data.ok) {
+              if (statusEl) statusEl.textContent = `Marked as re-ride: ${data.display}`;
+              const idx = CP_ENTRIES.findIndex(x => String(x.id) === String(entryId));
+              if (idx !== -1) {
+                CP_ENTRIES[idx].display = data.display;
+                CP_ENTRIES[idx].status = data.status;
+                CP_ENTRIES[idx].re_ride_taken = true;
+              }
+              syncPanelFromRow(entryId, data.display, data.status);
+              if (CP_ENTRIES[CP_INDEX] && String(CP_ENTRIES[CP_INDEX].id) === String(entryId)) {
+                cpRender();
+              }
+              const rowInput = document.getElementById('score-' + entryId);
+              if (rowInput) {
+                rowInput.value = data.display;
+                const row = rowInput.closest('tr');
+                if (row) {
+                  row.className = row.className.replace(/row-\S+/, '').trim() + ' row-' + data.status;
+                  const tableBtn = row.querySelector('.take-re-ride-btn');
+                  if (tableBtn) tableBtn.remove();
+                }
+              }
+            } else {
+              if (statusEl) statusEl.textContent = data.error || 'Could not take the re-ride.';
+              cpTakeRrBtn.disabled = false;
+            }
+          })
+          .catch(() => {
+            if (statusEl) statusEl.textContent = 'Could not reach the server — check your connection.';
+            cpTakeRrBtn.disabled = false;
+          });
+      });
+    }
+  }
+
+  const cpResolveVrBtn = document.getElementById('cp-resolve-vr-btn');
+  if (cpResolveVrBtn) {
+    cpResolveVrBtn.addEventListener('click', function() {
+      const entryId = cpResolveVrBtn.dataset.entryId;
+      const statusEl = document.getElementById('cp-finalize-status');
+      if (!entryId) return;
+      cpResolveVrBtn.disabled = true;
+      fetch(`/entries/${entryId}/resolve_video_review`, { method: 'POST' })
+        .then(r => r.json())
+        .then(data => {
+          if (data.ok) {
+            if (statusEl) statusEl.textContent = `Video review confirmed: ${data.display}`;
+            const idx = CP_ENTRIES.findIndex(x => String(x.id) === String(entryId));
+            if (idx !== -1) {
+              CP_ENTRIES[idx].display = data.display;
+              CP_ENTRIES[idx].status = data.status;
+              CP_ENTRIES[idx].pending_score = null;
+            }
+            syncPanelFromRow(entryId, data.display, data.status);
+            if (CP_ENTRIES[CP_INDEX] && String(CP_ENTRIES[CP_INDEX].id) === String(entryId)) {
+              cpRender();
+            }
+            const rowInput = document.getElementById('score-' + entryId);
+            if (rowInput) {
+              rowInput.value = data.display;
+              const row = rowInput.closest('tr');
+              if (row) {
+                row.className = row.className.replace(/row-\S+/, '').trim() + ' row-' + data.status;
+                const tableBtn = row.querySelector('.resolve-vr-btn');
+                if (tableBtn) tableBtn.remove();
+              }
+            }
+          } else {
+            if (statusEl) statusEl.textContent = data.error || 'Could not confirm the score.';
+            cpResolveVrBtn.disabled = false;
+          }
+        })
+        .catch(() => {
+          if (statusEl) statusEl.textContent = 'Could not reach the server — check your connection.';
+          cpResolveVrBtn.disabled = false;
+        });
+    });
+  }
+
+  // Arrow-key navigation, but only when focus isn't in an editable field --
+  // otherwise Left/Right arrows would hijack normal text-cursor movement
+  // while correcting a name, hometown, or score.
+  document.addEventListener('keydown', function(e) {
+    const active = document.activeElement;
+    const tag = active ? active.tagName : '';
+    const isEditable = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (active && active.isContentEditable);
+    if (isEditable) return;
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+      e.preventDefault();
+      cpSetCurrent(CP_INDEX + 1);
+    } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      cpSetCurrent(CP_INDEX - 1);
+    }
+  });
+}
+
+{% if request.args.get('added') %}
+// Just added a late entry -- jump straight to it and put the cursor in
+// the name field so it can be typed in immediately.
+(function() {
+  const row = document.querySelector('tr[data-entry-id="{{ request.args.get("added") }}"]');
+  if (row) {
+    row.scrollIntoView({behavior: 'smooth', block: 'center'});
+    const nameInput = row.querySelector('.name-field');
+    if (nameInput) { nameInput.focus(); }
+  }
+})();
+{% endif %}
+
+function saveScore(input) {
+  const entryId = input.dataset.entryId;
+  const row = input.closest('tr');
+  const errorLabel = document.getElementById('error-' + entryId);
+  const typedValue = input.value;
+  return fetch(`/entries/${entryId}/quick_score`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+    body: 'raw=' + encodeURIComponent(typedValue)
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.ok) {
+      input.classList.remove('input-error');
+      if (errorLabel) errorLabel.textContent = '';
+      input.value = data.display;
+      input.dataset.dirty = '';
+      row.className = row.className.replace(/row-\S+/, '').trim() + ' row-' + data.status;
+      input.classList.add('input-saved');
+      setTimeout(() => input.classList.remove('input-saved'), 700);
+      const noteEl = document.getElementById('penalty-note-' + entryId);
+      if (noteEl) noteEl.textContent = data.penalty_note || '';
+      syncPanelFromRow(entryId, data.display, data.status, data.penalty_note || '');
+      return true;
+    } else {
+      input.classList.add('input-error');
+      input.value = typedValue;
+      if (errorLabel) errorLabel.textContent = data.error || 'Invalid entry';
+      return false;
+    }
+  })
+  .catch(() => {
+    input.classList.add('input-error');
+    input.value = typedValue;
+    if (errorLabel) errorLabel.textContent = 'Could not save — check the app is still running.';
+    return false;
+  });
+}
+
+// Applies a penalty to an already-scored entry, wherever it's called
+// from (a table row's penalty button, or the auto-apply of a staged
+// penalty once a time lands). Keeps the current-contestant panel above
+// in sync too, in case this row happens to be the one it's showing.
+function applyPenaltyToEntry(entryId, amount, input, errorLabel) {
+  return fetch(`/entries/${entryId}/add_penalty`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+    body: 'amount=' + encodeURIComponent(amount)
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.ok) {
+      if (errorLabel) errorLabel.textContent = '';
+      if (input) {
+        input.value = data.display;
+        input.dataset.dirty = '';
+        input.classList.add('input-saved');
+        setTimeout(() => input.classList.remove('input-saved'), 700);
+        const row = input.closest('tr');
+        const noteEl = row ? row.querySelector('.row-penalty-note') : null;
+        if (noteEl) noteEl.textContent = data.penalty_note || '';
+      }
+      syncPanelFromRow(entryId, data.display, null, data.penalty_note || '');
+      return true;
+    } else {
+      if (errorLabel) errorLabel.textContent = data.error || 'Could not add penalty';
+      return false;
+    }
+  })
+  .catch(() => {
+    if (errorLabel) errorLabel.textContent = 'Could not save — check the app is still running.';
+    return false;
+  });
+}
+
+// If the row being edited/penalized in the table is also the entry
+// currently showing in the Current Contestant panel above, keep that
+// panel's display (and cached data) in sync rather than letting it go
+// stale -- someone might be watching both at once.
+function syncPanelFromRow(entryId, display, status, penaltyNote) {
+  const idx = CP_ENTRIES.findIndex(x => String(x.id) === String(entryId));
+  if (idx === -1) return;
+  CP_ENTRIES[idx].display = display;
+  if (status) CP_ENTRIES[idx].status = status;
+  if (penaltyNote !== undefined) CP_ENTRIES[idx].penalty_note = penaltyNote;
+  if (CP_ENTRIES[CP_INDEX] && String(CP_ENTRIES[CP_INDEX].id) === String(entryId)) {
+    const cpInput = document.getElementById('cp-score-input');
+    if (cpInput) {
+      cpInput.value = display;
+      cpInputDirty = false;
+    }
+    if (penaltyNote !== undefined) {
+      const noteEl = document.getElementById('cp-penalty-note');
+      if (noteEl) noteEl.textContent = penaltyNote;
+    }
+  }
+}
+
+// Inline editing for name / hometown / draw animal. Saves on blur or
+// Enter, same "type it and move on" feel as the score fields, just
+// without jumping focus around (these are corrections, not a fast-entry
+// workflow).
+function saveEditField(input) {
+  const endpoint = input.dataset.endpoint;
+  const field = input.dataset.field;  // present for competitor fields, absent for draw_animal
+  const typedValue = input.value;
+  const body = field ? `field=${encodeURIComponent(field)}&value=${encodeURIComponent(typedValue)}`
+                      : `value=${encodeURIComponent(typedValue)}`;
+  fetch(endpoint, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+    body: body
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.ok) {
+      input.classList.remove('input-error');
+      input.value = data.display;
+      input.classList.add('input-saved');
+      setTimeout(() => input.classList.remove('input-saved'), 700);
+      // If this is a competitor field, sync any other rows for the same
+      // competitor on this page (e.g. the All Rounds view).
+      if (field) {
+        const cid = input.dataset.competitorId;
+        document.querySelectorAll(`.${field}-field[data-competitor-id="${cid}"]`).forEach(other => {
+          if (other !== input) other.value = data.display;
+        });
+        if (data.merged) {
+          // Renaming this row to match an existing competitor merged the
+          // two records server-side -- the old competitor id no longer
+          // exists at all. Every field still pointing at it (this row's
+          // sibling hometown box, and any other row for the same old id
+          // elsewhere on the page) needs to be repointed at the new id,
+          // or the very next edit on any of them would 404.
+          document.querySelectorAll(`[data-competitor-id="${cid}"]`).forEach(el => {
+            el.dataset.competitorId = data.competitor_id;
+            el.dataset.endpoint = `/competitors/${data.competitor_id}/update_field`;
+          });
+        }
+      }
+    } else {
+      input.classList.add('input-error');
+      input.value = typedValue;
+    }
+  })
+  .catch(() => { input.classList.add('input-error'); input.value = typedValue; });
+}
+
+document.querySelectorAll('.edit-field').forEach(input => {
+  input.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      input.blur();
+    } else if (e.key === 'Escape') {
+      input.blur();
+    }
+  });
+  input.addEventListener('blur', function() { saveEditField(input); });
+});
+
+// Same penalty-staging rules as the Current Contestant panel above: a
+// penalty clicked before a time is typed/saved can't be sent to
+// add_penalty (it needs an existing scored entry to add on top of), so
+// it's staged on the input itself via a data attribute and applied
+// automatically the moment the time is saved. dirty tracks whether the
+// box holds a fresh, unsaved edit -- as opposed to just the last
+// saved/rendered value sitting there untouched -- so a second penalty
+// click doesn't resubmit an already-penalized total as a brand new raw
+// time and wipe the raw/penalty breakdown.
+document.querySelectorAll('.score-input:not(.cp-score-input)').forEach(input => {
+  input.dataset.dirty = '';
+  input.dataset.stagedPenalty = '0';
+  input.addEventListener('input', function() { input.dataset.dirty = '1'; });
+  input.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const advanceToNextRow = () => {
+        const row = input.closest('tr');
+        const nextRow = row.nextElementSibling;
+        if (nextRow) {
+          const nextInput = nextRow.querySelector('.score-input');
+          if (nextInput) { nextInput.focus(); nextInput.select(); }
+        }
+      };
+      if (input.dataset.dirty !== '1') {
+        // Nothing was actually typed -- this is just Enter-to-advance
+        // landing on a row that's already showing a saved (and possibly
+        // already-penalized) value. Re-submitting it would treat that
+        // combined total as a brand new raw time and silently wipe the
+        // penalty breakdown, even though the number on screen wouldn't
+        // change at all. Skip the save, but still move on -- that's the
+        // same feel as tabbing past a row that needs no correction.
+        advanceToNextRow();
+        return;
+      }
+      saveScore(input).then(ok => {
+        if (!ok) return;
+        const entryId = input.dataset.entryId;
+        const errorLabel = document.getElementById('error-' + entryId);
+        const staged = parseFloat(input.dataset.stagedPenalty || '0');
+        const finish = () => {
+          input.dataset.stagedPenalty = '0';
+          const pendingLabel = document.getElementById('pending-' + entryId);
+          if (pendingLabel) pendingLabel.textContent = '';
+          advanceToNextRow();
+        };
+        if (staged > 0) {
+          applyPenaltyToEntry(entryId, staged, input, errorLabel).then(finish);
+        } else {
+          finish();
+        }
+      });
+    } else if (e.key === 'Escape') {
+      input.blur();
+    }
+  });
+  input.addEventListener('focus', function() { input.select(); });
+});
+
+// Penalty buttons (+5/+10): if a time was just typed but not saved yet,
+// save it first and apply the penalty on top in one click. If a time is
+// already sitting there saved and untouched, apply immediately. If
+// there's no time at all yet, stage the penalty -- it'll be applied
+// automatically once a time is entered and saved (see the Enter handler
+// above).
+document.addEventListener('click', function(e) {
+  const penaltyBtn = e.target.closest('.penalty-btn');
+  if (!penaltyBtn) return;
+  if (penaltyBtn.closest('#contestant-panel')) return;  // panel has its own handler
+  const cell = penaltyBtn.closest('td');
+  const input = cell ? cell.querySelector('.score-input') : null;
+  const errorLabel = cell ? cell.querySelector('.error-label') : null;
+  if (!input) return;
+  const entryId = input.dataset.entryId;
+  const row = input.closest('tr');
+  const amount = parseFloat(penaltyBtn.dataset.penalty);
+  const alreadyScored = row && row.className.split(/\s+/).includes('row-scored');
+
+  if (input.dataset.dirty === '1' && input.value.trim() !== '') {
+    saveScore(input).then(ok => { if (ok) applyPenaltyToEntry(entryId, amount, input, errorLabel); });
+  } else if (alreadyScored) {
+    applyPenaltyToEntry(entryId, amount, input, errorLabel);
+  } else {
+    const current = parseFloat(input.dataset.stagedPenalty || '0');
+    const updated = current + amount;
+    input.dataset.stagedPenalty = String(updated);
+    const pendingLabel = document.getElementById('pending-' + entryId);
+    if (pendingLabel) pendingLabel.textContent = `+${updated} pending`;
+  }
+});
+
+// A judge flagged this ride as a re-ride -- clicking here is the
+// rider's decision (relayed by the scorekeeper) to give up the score
+// that was just finalized rather than keep it, since they're coming
+// back later on different stock. Stock scoring is untouched either
+// way; only the rider's own score gets cleared.
+document.addEventListener('click', function(e) {
+  const btn = e.target.closest('.take-re-ride-btn');
+  if (!btn) return;
+  if (btn.closest('#contestant-panel')) return;  // panel has its own handler
+  if (!confirm('Give up this score for a re-ride? The rider will need to come back later on different stock. This can be undone by hitting Finalize Score again once judges resubmit.')) return;
+  const entryId = btn.dataset.entryId;
+  btn.disabled = true;
+  fetch(`/entries/${entryId}/take_re_ride`, { method: 'POST' })
+    .then(r => r.json())
+    .then(data => {
+      if (data.ok) {
+        const rowInput = document.getElementById('score-' + entryId);
+        if (rowInput) {
+          rowInput.value = data.display;
+          const row = rowInput.closest('tr');
+          if (row) row.className = row.className.replace(/row-\S+/, '').trim() + ' row-' + data.status;
+        }
+        btn.remove();
+        syncPanelFromRow(entryId, data.display, data.status);
+      } else {
+        btn.disabled = false;
+        alert(data.error || 'Could not take the re-ride.');
+      }
+    })
+    .catch(() => {
+      btn.disabled = false;
+      alert('Could not reach the server — check your connection.');
+    });
+});
+
+// A judge flagged this ride for Video Review, and the scorekeeper has
+// now actually watched it back -- confirms the score the judges gave
+// stands as-is. If the review instead changes something, don't click
+// this; just type the corrected score or code directly into the field.
+document.addEventListener('click', function(e) {
+  const btn = e.target.closest('.resolve-vr-btn');
+  if (!btn) return;
+  if (btn.closest('#contestant-panel')) return;  // panel has its own handler
+  const entryId = btn.dataset.entryId;
+  btn.disabled = true;
+  fetch(`/entries/${entryId}/resolve_video_review`, { method: 'POST' })
+    .then(r => r.json())
+    .then(data => {
+      if (data.ok) {
+        const rowInput = document.getElementById('score-' + entryId);
+        if (rowInput) {
+          rowInput.value = data.display;
+          const row = rowInput.closest('tr');
+          if (row) row.className = row.className.replace(/row-\S+/, '').trim() + ' row-' + data.status;
+        }
+        btn.remove();
+        syncPanelFromRow(entryId, data.display, data.status);
+      } else {
+        btn.disabled = false;
+        alert(data.error || 'Could not confirm the score.');
+      }
+    })
+    .catch(() => {
+      btn.disabled = false;
+      alert('Could not reach the server — check your connection.');
+    });
+});
+
+
+// so the operator doesn't lose their spot while running the draw list.
+// If the clicked row is part of the current-contestant panel's entries
+// (same round the panel already has loaded), route through cpSetCurrent
+// for an instant, no-round-trip update. Otherwise -- a row from a
+// different round or event than whatever the panel is currently
+// showing -- refetch the panel's whole identity via
+// cpRefreshPanelContext, since we don't have that round's entries
+// cached client-side to jump to directly.
+document.addEventListener('click', function(e) {
+  const btn = e.target.closest('.set-whos-up-btn');
+  if (!btn) return;
+  e.preventDefault();
+  const entryId = btn.dataset.entryId;
+  const idx = CP_ENTRIES.findIndex(x => String(x.id) === String(entryId));
+  if (idx !== -1) {
+    cpSetCurrent(idx);
+    return;
+  }
+  fetch(`/entries/${entryId}/set_whos_up_ajax`, { method: 'POST' })
+    .then(r => r.json())
+    .then(data => {
+      if (data.ok) {
+        CP_TRUE_LIVE_ENTRY_ID = entryId;
+        syncTableLiveRow(entryId);
+        cpRefreshPanelContext();
+      }
+    })
+    .catch(() => {});
+});
+
+// ---------- Drag-to-reorder (alongside the up/down arrows, not a
+// replacement for them) ----------
+// Native HTML5 drag-and-drop, but only armed while the pointer is down
+// on the ⠿ handle -- the <tr> itself only becomes draggable="true" for
+// the duration of that press, so grabbing text in a name/hometown
+// field or clicking a button in the row never accidentally starts a
+// drag.
+(function () {
+  const table = document.querySelector('table.scoring-table[data-round-id]');
+  if (!table) return;
+  const roundId = table.dataset.roundId;
+  let draggingRow = null;
+
+  document.addEventListener('mousedown', function (e) {
+    const handle = e.target.closest('.drag-handle');
+    if (!handle) return;
+    const row = handle.closest('tr.draggable-row');
+    if (row) row.draggable = true;
+  });
+  document.addEventListener('mouseup', releaseAllRows);
+  document.addEventListener('dragend', releaseAllRows);
+
+  function releaseAllRows() {
+    table.querySelectorAll('tr.draggable-row').forEach((r) => { r.draggable = false; });
+  }
+
+  table.addEventListener('dragstart', function (e) {
+    const row = e.target.closest('tr.draggable-row');
+    if (!row) return;
+    draggingRow = row;
+    row.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+    // Firefox requires setData to actually start a drag.
+    e.dataTransfer.setData('text/plain', row.dataset.entryId || '');
+  });
+
+  table.addEventListener('dragover', function (e) {
+    const row = e.target.closest('tr.draggable-row');
+    if (!row || !draggingRow || row === draggingRow) return;
+    e.preventDefault();
+    const rect = row.getBoundingClientRect();
+    const before = (e.clientY - rect.top) < rect.height / 2;
+    table.querySelectorAll('tr.draggable-row').forEach((r) => {
+      r.classList.remove('drag-over-top', 'drag-over-bottom');
+    });
+    row.classList.add(before ? 'drag-over-top' : 'drag-over-bottom');
+  });
+
+  table.addEventListener('drop', function (e) {
+    const row = e.target.closest('tr.draggable-row');
+    table.querySelectorAll('tr.draggable-row').forEach((r) => {
+      r.classList.remove('drag-over-top', 'drag-over-bottom');
+    });
+    if (!row || !draggingRow || row === draggingRow) return;
+    e.preventDefault();
+    const rect = row.getBoundingClientRect();
+    const before = (e.clientY - rect.top) < rect.height / 2;
+    row.parentNode.insertBefore(draggingRow, before ? row : row.nextSibling);
+    renumberRows();
+    saveNewOrder();
+  });
+
+  table.addEventListener('dragend', function () {
+    if (draggingRow) draggingRow.classList.remove('dragging');
+    draggingRow = null;
+  });
+
+  function renumberRows() {
+    let i = 1;
+    table.querySelectorAll('tr.draggable-row .row-num').forEach((span) => {
+      span.textContent = i++;
+    });
+  }
+
+  function saveNewOrder() {
+    const ids = Array.from(table.querySelectorAll('tr.draggable-row'))
+      .map((r) => r.dataset.entryId);
+    fetch(`/rounds/${roundId}/reorder`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: 'order=' + encodeURIComponent(ids.join(',')),
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        if (!data.ok) {
+          alert(data.error || 'Could not save the new order.');
+          location.reload();
+        }
+      })
+      .catch(() => {
+        alert('Could not reach the server — the new order may not be saved.');
+        location.reload();
+      });
+  }
+})();
+</script>
+{% endblock %}

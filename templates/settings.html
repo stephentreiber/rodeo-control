@@ -1,0 +1,143 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Settings</h1>
+
+<form method="post" class="settings-form">
+<div class="settings-grid">
+
+  <div class="settings-section">
+    <h2>General</h2>
+
+    <label>Rodeo Name <input name="rodeo_name" value="{{ rodeo_name }}"></label>
+    <p class="settings-hint">Shown throughout the app, on judges' devices, on the Announcer Screen, and baked into
+    the XML exports for broadcast graphics.</p>
+
+    <label class="settings-subhead">XML Export Folder <input name="export_folder" value="{{ export_folder }}"></label>
+    <p class="settings-hint">Point vMix / Ross XPression at this folder. Three files are kept continuously up to
+    date: <code>whos_up.xml</code>, <code>round_leaderboard.xml</code>, <code>aggregate_leaderboard.xml</code>.</p>
+
+    <label class="settings-subhead">Number of Competitors on Leaderboard
+      <select name="names_field_limit">
+        {% for n in range(1, 21) %}
+        <option value="{{ n }}" {{ 'selected' if names_field_limit == n|string }}>{{ n }}</option>
+        {% endfor %}
+        <option value="" {{ 'selected' if names_field_limit == '' }}>All (no limit)</option>
+      </select>
+    </label>
+    <p class="settings-hint">Controls both leaderboard XML files two ways: the combined <code>all_names</code> /
+    <code>all_ranks</code> / <code>all_lastnames</code> / <code>all_scores</code> fields (one line-broken field
+    per column, for a one-box "who's on the board" graphic), and individual numbered fields —
+    <code>rank_1</code>/<code>name_1</code>/<code>lastname_1</code>/<code>score_1</code>,
+    <code>rank_2</code>/<code>name_2</code>/... and so on — for graphics software that can't use the line-broken
+    fields or a repeating list at all. The numbered fields always exist at this count, blank past however many
+    are actually on the board, so the file's structure never changes shape. If "All" is selected, the numbered
+    fields still cap at 20 since a fixed set of tags needs an actual number either way.</p>
+
+    <div class="settings-subhead">
+      <label><input type="checkbox" name="enable_video_review" value="1" {{ 'checked' if enable_video_review }}
+             style="width:auto; margin-right:6px;"> Enable Video Review</label>
+      <p class="settings-hint">Turns on the <code>VR</code> code in the quick-entry score field, for rodeos that
+      have a video review option available. Off by default since not every rodeo has this -- typing
+      <code>VR</code> won't work until this is checked.</p>
+    </div>
+  </div>
+
+  <div class="settings-section">
+    <h2>Judges &amp; Colors</h2>
+
+    <label>Number of Judges (Roughstock Events)
+      <select name="judge_count">
+        <option value="2" {{ 'selected' if judge_count == '2' }}>2 (scores added together)</option>
+        <option value="4" {{ 'selected' if judge_count == '4' }}>4 (all four summed, divided by 2)</option>
+      </select>
+    </label>
+    <p class="settings-hint">Applies to every roughstock event. Each judge scores the rider and the stock
+    separately (1-25, half points, 50 max per judge). With 2 judges, both totals are added together; with 4, all
+    four are added together and divided by 2 -- either way it lands on the same 0-100 scale as a directly-typed
+    judged score.</p>
+
+    <label class="settings-subhead">Judge Names <span class="tip" tabindex="0">?
+      <span class="tip-bubble">Give each seat a real name so you can see exactly who's missing a score, instead of
+      just an anonymous seat number, in the Judges panel and anywhere judges disagree. Shown on the judges' own
+      seat-picker and scoring screen too, so they can confirm they picked the right one. Leave any blank to just
+      show "Judge N".</span>
+    </span></label>
+    <div class="judge-name-row">
+      {% for seat in range(1, 5) %}
+      <label>Seat {{ seat }} <input type="text" name="judge_name_{{ seat }}" value="{{ judge_names_raw[seat] }}" placeholder="Judge {{ seat }}"></label>
+      {% endfor %}
+    </div>
+
+    <div class="settings-subhead">
+      <label>Announcer Screen Colors</label>
+      <p class="settings-hint">The Announcer Screen (see the nav bar) is a separate full-screen dark monitor view,
+      not part of the app's own theme above, so it gets its own small palette to match. Text color stays legible
+      against whatever background is picked, so leave Background dark for a broadcast-monitor look.</p>
+      <div class="theme-color-row">
+        <label>Background <input type="color" name="announcer_color_bg" value="{{ announcer_color_bg }}"></label>
+        <label>Accent <input type="color" name="announcer_color_accent" value="{{ announcer_color_accent }}"></label>
+        <label>Text <input type="color" name="announcer_color_text" value="{{ announcer_color_text }}"></label>
+      </div>
+      <button type="submit" name="reset_announcer_colors" value="1" class="tiny">Reset Colors to Default</button>
+    </div>
+  </div>
+
+</div>
+<button type="submit" class="settings-save-btn">Save Settings</button>
+</form>
+
+<div class="settings-grid settings-grid-standalone">
+
+<div class="settings-section">
+  <h2>Judge Access</h2>
+  {% if judge_url %}
+  <p>Judges scan this on their own phone or tablet to open the scoring screen — no login, they just pick a seat:</p>
+  <div class="judge-qr-block">
+    {% if judge_qr_svg %}
+    <div class="judge-qr-svg">{{ judge_qr_svg|safe }}</div>
+    {% endif %}
+    <p><code>{{ judge_url }}</code></p>
+    {% if not judge_qr_svg %}
+    <p class="settings-hint">The QR code needs the <code>qrcode</code> package — run <code>install.bat</code>
+    again to add it. The link above still works fine typed in manually in the meantime.</p>
+    {% endif %}
+  </div>
+  {% else %}
+  <p class="settings-hint">Couldn't detect this computer's WiFi address. Judges' devices need this computer's
+  LAN IP followed by <code>:5000/judge</code> — check <code>ipconfig</code>, or see the console window this app
+  was started from.</p>
+  {% endif %}
+</div>
+
+<div class="settings-section">
+  <h2>Data &amp; Backup</h2>
+
+  <p class="settings-hint">The three broadcast graphics files normally stay up to date on their own as things
+  change. Use this if vMix / Ross XPression ever looks out of sync and you want to force a fresh write right now.</p>
+  <form method="post" action="{{ url_for('export_now') }}">
+    <button type="submit">Force Re-export Now</button>
+  </form>
+
+  <div class="settings-subhead">
+    <label>Backup &amp; Restore</label>
+    <p class="settings-hint">A backup is the entire rodeo -- every competitor, event, round, entry, score, judge
+    submission, and setting -- saved as a single file. Good insurance against a corrupted install or swapping to
+    a different computer mid-event, and an easy way to archive a finished rodeo.</p>
+
+    <form method="get" action="{{ url_for('backup_export') }}" class="inline-form">
+      <button type="submit">Download Backup</button>
+    </form>
+
+    <form method="post" action="{{ url_for('backup_import') }}" enctype="multipart/form-data" class="inline-form"
+          onsubmit="return confirm('This replaces everything currently in the app with whatever is in this backup file -- every competitor, event, score, and setting since the backup was made. A safety copy of what\'s here now is kept automatically, but this itself can\'t be undone. Continue?');">
+      <label>Restore from file <input type="file" name="backup_file" accept=".db" required></label>
+      <button type="submit" class="danger">Restore Backup</button>
+    </form>
+    <p class="settings-hint">Restoring is a full replace, not a merge -- whatever's currently in the app is fully
+    swapped out for what's in the file. A safety copy of the current data is saved automatically first (in the
+    app folder's <code>backups</code> subfolder) in case the wrong file gets picked by mistake.</p>
+  </div>
+</div>
+
+</div>
+{% endblock %}

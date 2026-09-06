@@ -1,0 +1,182 @@
+/* Dedicated full-screen monitor view -- dark, high-contrast, big type,
+   built to be read from across a booth or a production truck, not up
+   close. Colors come from CSS variables (overridden per-install from
+   Settings -- see the inline <style> in announcer.html); the values
+   below are just the defaults if that override is ever missing. */
+:root {
+  --announcer-bg: #14100d;
+  --announcer-accent: #d9a441;
+  --announcer-text: #f2e9dd;
+}
+* { box-sizing: border-box; }
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--announcer-bg);
+  color: var(--announcer-text);
+  font-family: -apple-system, "Segoe UI", Arial, sans-serif;
+}
+
+.announcer-shell {
+  min-height: 100vh;
+  padding: 22px 28px 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.announcer-topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  border-bottom: 2px solid #3a2e24;
+  padding-bottom: 10px;
+}
+.announcer-topbar h1 {
+  margin: 0;
+  font-size: 1.4em;
+  letter-spacing: 0.04em;
+  color: var(--announcer-accent);
+  text-transform: uppercase;
+}
+.announcer-clock { font-size: 1.1em; color: #a8988a; font-variant-numeric: tabular-nums; }
+
+/* ---------- Current contestant (the big one) ---------- */
+.announcer-current {
+  /* Solid fallback first for browsers without color-mix(), then the
+     adaptive version -- a slightly lighter card tone derived from
+     whatever background color is chosen, rather than a second color
+     someone would have to pick and keep coordinated by hand. */
+  background: #1f1712;
+  background: color-mix(in srgb, var(--announcer-bg) 100%, white 8%);
+  border: 2px solid var(--announcer-accent);
+  border-radius: 10px;
+  padding: 22px 28px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+.announcer-current-empty {
+  color: #85756a;
+  font-size: 1.3em;
+  font-style: italic;
+}
+.announcer-current-id { flex: 1 1 320px; min-width: 260px; }
+.announcer-current-name {
+  font-size: 2.6em;
+  font-weight: 800;
+  line-height: 1.05;
+  margin: 0 0 4px;
+}
+.announcer-current-sub { font-size: 1.2em; color: #cbb9a8; margin: 0; }
+.announcer-current-context { font-size: 1.05em; color: var(--announcer-accent); margin: 6px 0 0; }
+.announcer-current-note { font-size: 1em; color: #a8988a; margin: 6px 0 0; }
+
+.announcer-current-stats {
+  display: flex;
+  gap: 28px;
+  flex: 0 0 auto;
+}
+.announcer-stat { text-align: center; min-width: 100px; }
+.announcer-stat-label {
+  display: block;
+  font-size: 0.8em;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #a8988a;
+  margin-bottom: 4px;
+}
+.announcer-stat-value { display: block; font-size: 2em; font-weight: 700; color: var(--announcer-text); }
+.announcer-stat-value.rank { color: #6fbf73; }
+.announcer-stat-value-small { font-size: 1.3em; }
+
+/* ---------- Per-judge breakdown strip ---------- */
+.announcer-judges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.announcer-judge-card {
+  background: #1c1611;
+  background: color-mix(in srgb, var(--announcer-bg) 100%, white 5%);
+  border: 1px solid #3a2e24;
+  border-radius: 6px;
+  padding: 8px 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 1em;
+}
+.announcer-judge-name {
+  font-weight: 700;
+  color: var(--announcer-accent);
+  text-transform: uppercase;
+  font-size: 0.85em;
+  letter-spacing: 0.03em;
+}
+.announcer-judge-marks { display: flex; gap: 10px; font-variant-numeric: tabular-nums; }
+.announcer-judge-marks span { color: var(--announcer-text); }
+.announcer-judge-outcome {
+  color: #e8846b;
+  font-weight: 700;
+  text-transform: uppercase;
+  font-size: 0.9em;
+}
+.announcer-judge-card.announcer-judge-waiting { opacity: 0.5; border-style: dashed; }
+.announcer-judge-pending { color: #6b5d52; font-style: italic; font-size: 0.9em; }
+
+/* ---------- Bottom panel grid ---------- */
+.announcer-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 18px;
+  flex: 1;
+}
+@media (max-width: 1100px) {
+  .announcer-grid { grid-template-columns: 1fr; }
+}
+
+.announcer-panel {
+  background: #1c1611;
+  background: color-mix(in srgb, var(--announcer-bg) 100%, white 5%);
+  border: 1px solid #3a2e24;
+  border-radius: 8px;
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.announcer-panel h2 {
+  margin: 0 0 10px;
+  font-size: 1.05em;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--announcer-accent);
+  border-bottom: 1px solid #3a2e24;
+  padding-bottom: 8px;
+}
+.announcer-panel-empty { color: #6b5d52; font-style: italic; font-size: 0.95em; }
+
+.announcer-board { list-style: none; margin: 0; padding: 0; }
+.announcer-board li {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 5px 0;
+  border-bottom: 1px solid #2a221b;
+  font-size: 1.05em;
+}
+.announcer-board li:last-child { border-bottom: none; }
+.announcer-rank {
+  flex: 0 0 1.6em;
+  color: #85756a;
+  font-weight: 700;
+  text-align: right;
+}
+.announcer-board-name { flex: 1 1 auto; font-weight: 600; }
+.announcer-board-hometown { color: #a8988a; font-size: 0.85em; margin-left: 6px; }
+.announcer-board-score { flex: 0 0 auto; font-weight: 700; color: var(--announcer-text); font-variant-numeric: tabular-nums; }
+
+.announcer-stock-sub { color: #a8988a; font-size: 0.85em; display: block; }

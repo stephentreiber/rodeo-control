@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+
+{% block subnav %}
+{% include "_event_tabs.html" %}
+{% endblock %}
+
+{% block content %}
+<h1>{{ event.name }} — Leaderboards
+  <span class="tip" tabindex="0">?
+    <span class="tip-bubble">This page auto-refreshes every few seconds so you can confirm scores are landing
+    without leaving it open and stale.</span>
+  </span>
+</h1>
+
+<div class="two-col">
+  <div>
+    <h2>Round Leaderboard (live export)</h2>
+    <form method="post">
+      <input type="hidden" name="action" value="set_round">
+      <select name="round_number">
+        <option value="">Select round #...</option>
+        {% for num, names in round_number_groups.items() %}
+        <option value="{{ num }}" {{ 'selected' if active_round_number == num|string }}>
+          Round {{ num }}{% if names|length > 1 %} ({{ names|length }} performances){% endif %}
+        </option>
+        {% endfor %}
+      </select>
+      <button type="submit">Set as Live Round Leaderboard</button>
+    </form>
+    {% if active_round_number and round_number_groups.get(active_round_number|int) %}
+    <p><small>Round {{ active_round_number }} includes:
+      {{ round_number_groups[active_round_number|int]|join(', ') }}</small></p>
+    {% endif %}
+    {% if round_board %}
+    <table class="list">
+      <tr><th>#</th><th>Name</th><th>Hometown</th><th>Score</th></tr>
+      {% for r in round_board %}
+      <tr><td>{{ loop.index }}</td><td>{{ r.name }}</td><td>{{ r.hometown }}</td><td>{{ r.display }}</td></tr>
+      {% endfor %}
+    </table>
+    {% else %}
+    <p><em>{% if active_round_number %}No scored entries in Round {{ active_round_number }} yet.{% else %}No live round leaderboard set.{% endif %}</em></p>
+    {% endif %}
+  </div>
+
+  <div>
+    <h2>Aggregate Leaderboard (live export)</h2>
+    <p><small>Automatically combines a competitor's scores across every round in this event — no need to pick rounds. Shown as <code>total/head</code>, e.g. <code>186/2</code> for 186 points on 2 head.</small></p>
+    <form method="post">
+      <input type="hidden" name="action" value="set_aggregate">
+      <button type="submit">{{ 'Refresh Live Aggregate Leaderboard' if agg_is_live else 'Set as Live Aggregate Leaderboard' }}</button>
+      {% if agg_is_live %}<span class="badge">LIVE</span>{% endif %}
+    </form>
+    {% if agg_board %}
+    <table class="list">
+      <tr><th>#</th><th>Name</th><th>Hometown</th><th>Total</th></tr>
+      {% for r in agg_board %}
+      <tr>
+        <td>{{ loop.index }}</td>
+        <td>{{ r.name }}</td>
+        <td>{{ r.hometown }}</td>
+        <td>{{ r.display }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+    {% else %}
+    <p><em>No scored entries in this event yet.</em></p>
+    {% endif %}
+  </div>
+</div>
+
+<p><a href="{{ url_for('event_detail', eid=event.id) }}">← Back to {{ event.name }}</a></p>
+
+<script>
+setTimeout(() => location.reload(), 6000);
+</script>
+{% endblock %}

@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>50/50
+  <span class="tip" tabindex="0">?
+    <span class="tip-bubble">Update the total whenever you want it to show on the lower third — as many times
+    during the show as you like. Fill in the winning number once it's drawn. "Reset" clears both, for a rodeo
+    running more than one performance.</span>
+  </span>
+</h1>
+
+<form method="post" class="card-form">
+  <div class="grid">
+    <label>Current Total <input name="total" value="{{ data.total }}" placeholder="e.g. 1245 or $1,245.00"></label>
+    <label>Winning Number <input name="winning_number" value="{{ data.winning_number }}" placeholder="e.g. 0427"></label>
+  </div>
+  <button type="submit">Save</button>
+</form>
+
+<form method="post" onsubmit="return confirm('Clear the total and winning number? Do this between performances.');">
+  <input type="hidden" name="action" value="reset">
+  <button class="danger tiny" type="submit">Reset for Next Performance</button>
+</form>
+
+<p>This is continuously exported to <code>fifty_fifty.xml</code> in your export folder for your lower third.</p>
+{% endblock %}

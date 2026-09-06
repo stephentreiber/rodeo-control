@@ -1,0 +1,227 @@
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; touch-action: pan-x pan-y; }
+html, body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: -apple-system, "Segoe UI", Arial, sans-serif;
+  background: #1a1310;
+  color: #efe4d8;
+  user-select: none;
+  touch-action: pan-x pan-y;
+  transition: background-color 0.4s ease;
+}
+/* At-a-glance submission status -- a judge watching the arena, not the
+   phone, should be able to tell from peripheral vision alone whether
+   they still owe a score. Deliberately muted/dark rather than a bright
+   red or green: stays legible against the score/name text on top,
+   doesn't wreck night vision under stadium lights, and still reads as
+   clearly different from the neutral "waiting" state and from each
+   other. No color at all while waiting for a contestant -- red would
+   wrongly suggest something is owed when there's nothing to score yet. */
+body.judge-unsubmitted { background: #3d1a1a; }
+body.judge-submitted { background: #163d20; }
+.judge-shell {
+  max-width: 480px;
+  margin: 0 auto;
+  min-height: 100vh;
+  padding: 20px 16px 40px;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---------- Seat picker ---------- */
+.judge-shell h1 { text-align: center; font-size: 1.4em; color: #efe4d8; margin: 10px 0 2px; }
+.judge-subtitle { text-align: center; color: #c9b8a8; margin: 0 0 30px; font-size: 1.1em; }
+.seat-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+.seat-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  word-break: break-word;
+  background: #8a4a2f;
+  color: #fff;
+  font-size: 1.4em;
+  font-weight: 700;
+  padding: 40px 10px;
+  border-radius: 14px;
+  text-decoration: none;
+  box-shadow: 0 3px 0 #5b2a1f;
+}
+.seat-btn:active { transform: translateY(2px); box-shadow: 0 1px 0 #5b2a1f; }
+
+/* ---------- Scoring screen ---------- */
+.judge-topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #3a2e26;
+  margin-bottom: 16px;
+}
+.judge-seat-label { font-weight: 700; font-size: 1.1em; color: #efe4d8; }
+.switch-seat-link { color: #d99a6c; font-size: 0.9em; text-decoration: none; }
+
+.waiting-block {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  color: #c9b8a8;
+  font-size: 1.2em;
+  padding: 40px 20px;
+}
+
+.now-scoring {
+  text-align: center;
+  margin-bottom: 24px;
+  padding-bottom: 16px;
+  border-bottom: 1px dashed #3a2e26;
+}
+.now-scoring-meta {
+  display: flex;
+  justify-content: center;
+  gap: 14px;
+  font-size: 0.85em;
+  color: #d99a6c;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 700;
+  margin-bottom: 6px;
+  min-height: 1.2em;
+}
+.now-scoring-name { font-size: 1.8em; font-weight: 800; line-height: 1.15; }
+.now-scoring-sub { font-size: 1.05em; color: #c9b8a8; margin-top: 2px; min-height: 1.3em; }
+.now-scoring-stock { font-size: 1.15em; color: #efe4d8; margin-top: 8px; font-weight: 600; min-height: 1.4em; }
+
+.score-block { margin-bottom: 22px; }
+.score-label {
+  text-align: center;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-weight: 700;
+  color: #d99a6c;
+  font-size: 1.15em;
+  margin-bottom: 8px;
+}
+.score-control { display: flex; align-items: center; justify-content: center; gap: 18px; }
+.score-btn {
+  width: 64px;
+  height: 64px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: none;
+  font-size: 2em;
+  font-weight: 700;
+  color: #fff;
+  background: #8a4a2f;
+  box-shadow: 0 3px 0 #5b2a1f;
+  cursor: pointer;
+  line-height: 1;
+}
+.score-btn:active { transform: translateY(2px); box-shadow: 0 1px 0 #5b2a1f; }
+.score-btn:disabled { opacity: 0.4; }
+.score-value {
+  min-width: 110px;
+  text-align: center;
+  font-size: 2.6em;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+#rider-score-block { transition: opacity 0.15s; }
+#rider-score-block.dimmed { opacity: 0.35; pointer-events: none; }
+
+.outcome-block { margin-bottom: 18px; }
+.outcome-label {
+  text-align: center;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-weight: 700;
+  color: #d99a6c;
+  font-size: 0.85em;
+  margin-bottom: 8px;
+}
+.outcome-buttons { display: flex; justify-content: center; gap: 12px; }
+.outcome-btn {
+  flex: 1;
+  max-width: 100px;
+  padding: 14px 0;
+  font-size: 1.2em;
+  font-weight: 800;
+  color: #efe4d8;
+  background: #3a2e26;
+  border: 2px solid #5b2a1f;
+  border-radius: 12px;
+  cursor: pointer;
+}
+.outcome-btn.selected {
+  background: #b23c2e;
+  border-color: #ff8a70;
+  color: #fff;
+}
+.outcome-btn:active { transform: translateY(2px); }
+
+.submit-btn {
+  display: block;
+  width: 100%;
+  padding: 20px;
+  margin-top: 12px;
+  font-size: 1.3em;
+  font-weight: 800;
+  color: #fff;
+  background: #2d6a2f;
+  border: none;
+  border-radius: 14px;
+  box-shadow: 0 3px 0 #1c451e;
+  cursor: pointer;
+}
+.submit-btn:active { transform: translateY(2px); box-shadow: 0 1px 0 #1c451e; }
+.submit-btn:disabled { opacity: 0.6; }
+
+.submit-status {
+  text-align: center;
+  color: #9fd99f;
+  font-size: 0.95em;
+  margin-top: 12px;
+  min-height: 1.2em;
+}
+.judge-error {
+  text-align: center;
+  color: #ff8a80;
+  font-size: 0.95em;
+  margin-top: 10px;
+  min-height: 1.2em;
+}
+
+/* ---------- Timed-event penalty flags ---------- */
+.timed-current-block { text-align: center; margin-bottom: 22px; }
+.timed-current-display {
+  font-size: 2.6em;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+.timed-current-note {
+  color: #d99a6c;
+  font-size: 0.95em;
+  min-height: 1.3em;
+  margin-top: 4px;
+}
+.timed-penalty-buttons {
+  flex-wrap: wrap;
+  gap: 14px;
+}
+.timed-penalty-btn {
+  flex: 1 1 40%;
+  max-width: none;
+  min-width: 130px;
+  padding: 20px 8px;
+  font-size: 1.15em;
+  line-height: 1.35;
+}
+.timed-penalty-btn:disabled { opacity: 0.4; }
+.timed-head-catch-btn {
+  flex-basis: 100%;
+  background: #4a2420;
+  border-color: #7a3a2e;
+}

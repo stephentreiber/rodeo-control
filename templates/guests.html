@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Guests
+  <span class="tip" tabindex="0">?
+    <span class="tip-bubble">Add anyone who needs a lower third but isn't a competitor — royalty, sponsors,
+    committee members, the anthem singer, whoever. "Set Who's Up" feeds one of them into the same Who's Up lower
+    third used for the current contestant — handy for shows without a dedicated graphics operator, since it's
+    already bound in your graphics software.</span>
+  </span>
+</h1>
+
+<form method="post" class="card-form">
+  <div class="grid">
+    <label>Name <input name="name" required></label>
+    <label>Hometown <input name="hometown"></label>
+    <label>Sponsor <input name="sponsor"></label>
+    <label>Notes <input name="notes"></label>
+  </div>
+  <button type="submit">Add Guest</button>
+</form>
+
+<table class="list">
+  <tr><th></th><th>Name</th><th>Hometown</th><th>Sponsor</th><th>Notes</th><th>Who's Up</th><th></th></tr>
+  {% for p in people %}
+  <tr data-guest-id="{{ p.id }}" class="{{ 'live' if p.id == live_guest_id }}">
+    <td>
+      <form style="display:inline" method="post" action="{{ url_for('move_guest', gid=p.id, direction='up') }}"><button class="tiny" type="submit">↑</button></form>
+      <form style="display:inline" method="post" action="{{ url_for('move_guest', gid=p.id, direction='down') }}"><button class="tiny" type="submit">↓</button></form>
+    </td>
+    <td class="editable-cell">
+      <input type="text" class="edit-field name-field" value="{{ p.name }}"
+             data-endpoint="/guests/{{ p.id }}/update_field" data-field="name">
+    </td>
+    <td class="editable-cell">
+      <input type="text" class="edit-field hometown-field" value="{{ p.hometown }}" placeholder="hometown"
+             data-endpoint="/guests/{{ p.id }}/update_field" data-field="hometown">
+    </td>
+    <td class="editable-cell">
+      <input type="text" class="edit-field" value="{{ p.sponsor }}" placeholder="sponsor"
+             data-endpoint="/guests/{{ p.id }}/update_field" data-field="sponsor">
+    </td>
+    <td class="editable-cell">
+      <input type="text" class="edit-field" value="{{ p.notes }}" placeholder="notes"
+             data-endpoint="/guests/{{ p.id }}/update_field" data-field="notes">
+    </td>
+    <td class="whos-up-cell">
+      {% if p.id == live_guest_id %}
+        <span class="badge">LIVE</span>
+      {% else %}
+        <button type="button" class="set-guest-whos-up-btn" data-guest-id="{{ p.id }}">Set Who's Up</button>
+      {% endif %}
+    </td>
+    <td>
+      <form method="post" action="{{ url_for('delete_guest', gid=p.id) }}" onsubmit="return confirm('Remove this guest?');">
+        <button class="icon-btn" type="submit" title="Remove">🗑</button>
+      </form>
+    </td>
+  </tr>
+  {% endfor %}
+</table>
+
+<script>
+// Inline field editing -- same click-to-edit-and-blur-to-save pattern as
+// the draw table's name/hometown fields.
+function saveGuestField(input) {
+  const endpoint = input.dataset.endpoint;
+  const field = input.dataset.field;
+  const typedValue = input.value;
+  fetch(endpoint, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+    body: `field=${encodeURIComponent(field)}&value=${encodeURIComponent(typedValue)}`
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.ok) {
+      input.value = data.display;
+      input.classList.remove('input-error');
+      input.classList.add('input-saved');
+      setTimeout(() => input.classList.remove('input-saved'), 700);
+    } else {
+      input.classList.add('input-error');
+      input.value = typedValue;
+    }
+  })
+  .catch(() => { input.classList.add('input-error'); input.value = typedValue; });
+}
+document.querySelectorAll('.edit-field').forEach(input => {
+  input.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+    else if (e.key === 'Escape') { input.blur(); }
+  });
+  input.addEventListener('blur', function() { saveGuestField(input); });
+});
+
+// Setting Who's Up updates the LIVE badge in place, no reload -- same
+// pattern as the draw table.
+document.addEventListener('click', function(e) {
+  const btn = e.target.closest('.set-guest-whos-up-btn');
+  if (!btn) return;
+  e.preventDefault();
+  const gid = btn.dataset.guestId;
+  fetch(`/guests/${gid}/set_whos_up_ajax`, { method: 'POST' })
+    .then(r => r.json())
+    .then(data => {
+      if (!data.ok) return;
+      document.querySelectorAll('tr[data-guest-id]').forEach(row => {
+        const cell = row.querySelector('.whos-up-cell');
+        if (!cell) return;
+        if (row.dataset.guestId === String(gid)) {
+          row.classList.add('live');
+          cell.innerHTML = '<span class="badge">LIVE</span>';
+        } else if (row.classList.contains('live')) {
+          row.classList.remove('live');
+          cell.innerHTML = `<button type="button" class="set-guest-whos-up-btn" data-guest-id="${row.dataset.guestId}">Set Who's Up</button>`;
+        }
+      });
+    })
+    .catch(() => {});
+});
+</script>
+{% endblock %}

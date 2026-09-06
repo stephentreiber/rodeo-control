@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Who's Up</h1>
+
+{% if current and current.name %}
+<div class="whos-up-card">
+  <h2>{{ current.name }}</h2>
+  <p>{{ current.hometown }}</p>
+  {% if current.sponsor %}<p>Sponsor: {{ current.sponsor }}</p>{% endif %}
+  {% if current.partner %}<p>Partner: {{ current.partner }}</p>{% endif %}
+  {% if current.draw_animal %}<p>Draw: {{ current.draw_animal }}</p>{% endif %}
+  {% if current.event_name or current.round_name %}
+  <p>{{ current.event_name }}{% if current.event_name and current.round_name %} — {% endif %}{{ current.round_name }}</p>
+  {% endif %}
+  {% if extra.round_score %}<p><strong>Score: {{ extra.round_score }}</strong></p>{% endif %}
+  {% if extra.aggregate_score %}<p>Aggregate: {{ extra.aggregate_score }}</p>{% endif %}
+  {% if extra.round_rank or extra.aggregate_rank %}
+  <p>
+    {% if extra.round_rank %}RND: {{ extra.round_rank }}{% endif %}
+    {% if extra.round_rank and extra.aggregate_rank %} &nbsp;|&nbsp; {% endif %}
+    {% if extra.aggregate_rank %}AGG: {{ extra.aggregate_rank }}{% endif %}
+  </p>
+  {% endif %}
+</div>
+<form method="post" action="{{ url_for('clear_whos_up') }}">
+  <button class="danger" type="submit">Clear Who's Up</button>
+</form>
+{% else %}
+<p><em>No one is currently set as "Who's Up." Set a competitor from a round's scoring page, or a guest from the Guests page.</em></p>
+{% endif %}
+
+<p>This data is continuously exported to <code>whos_up.xml</code> in your export folder for your lower third.</p>
+{% endblock %}

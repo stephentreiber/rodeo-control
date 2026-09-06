@@ -1,0 +1,175 @@
+{% extends "base.html" %}
+
+{% block subnav %}
+<div class="round-tabs">
+  {% for r in rounds %}
+  <a class="round-tab {{ 'active' if current_round_key == r.id|string }}" title="{{ r.name }}"
+     href="{{ url_for('judge_scores_table', eid=event.id, round=r.id) }}"><span class="round-tab-name">{{ r.name }}</span> <span class="round-num-tag">#{{ r.round_number }}</span></a>
+  {% endfor %}
+  <a class="round-tab {{ 'active' if current_round_key == 'all' }}"
+     href="{{ url_for('judge_scores_table', eid=event.id, round='all') }}">All Rounds</a>
+</div>
+{% endblock %}
+
+{% block content %}
+<h1>{{ event.name }} — Judge Scores
+  <span class="tip" tabindex="0">?
+    <span class="tip-bubble">Every judge's individual rider/stock score for every entry, editable directly --
+    for correcting a mistaken submission, or for typing scores in yourself when a judge's phone or tablet isn't
+    available. Rider/Stock save together as soon as you leave either field. Combined columns update live but
+    don't become the entry's official score until you hit Finalize.</span>
+  </span>
+</h1>
+<p><a href="{{ url_for('event_detail', eid=event.id, round=current_round_key) }}">← Back to {{ event.name }}</a></p>
+
+{% if not entries %}
+<p><em>No entries in {{ 'this round' if current_round_key != 'all' else 'this event' }} yet.</em></p>
+{% else %}
+<div class="judge-scores-table-wrap">
+<table class="list judge-scores-table">
+  <tr>
+    <th rowspan="2">Draw #</th>
+    <th rowspan="2">Name</th>
+    <th rowspan="2">Hometown</th>
+    <th rowspan="2">Stock</th>
+    {% if current_round_key == 'all' %}<th rowspan="2">Round</th>{% endif %}
+    {% for seat in range(1, judge_count + 1) %}
+    <th colspan="3" class="judge-group-header">{{ judge_names[seat] }}</th>
+    {% endfor %}
+    <th rowspan="2">Combined Rider</th>
+    <th rowspan="2">Combined Stock</th>
+    <th rowspan="2">Official Score</th>
+    <th rowspan="2">Finalize</th>
+  </tr>
+  <tr>
+    {% for seat in range(1, judge_count + 1) %}
+    <th class="judge-subcol">Rider</th><th class="judge-subcol">Stock</th><th class="judge-subcol">Code</th>
+    {% endfor %}
+  </tr>
+  {% for e in entries %}
+  <tr data-entry-id="{{ e.id }}">
+    <td>{{ e.draw_number }}</td>
+    <td>{{ e.name }}</td>
+    <td>{{ e.hometown }}</td>
+    <td>{{ e.draw_animal }}</td>
+    {% if current_round_key == 'all' %}<td>{{ e.round_name }}</td>{% endif %}
+    {% for s in e.seats %}
+    <td class="judge-group-cell">
+      <input type="number" class="js-input js-rider" min="1" max="25" step="0.5"
+             value="{{ s.rider_score if s.rider_score is not none else '' }}"
+             data-entry-id="{{ e.id }}" data-seat="{{ s.seat }}"
+             {{ 'disabled' if s.outcome in judge_outcomes_no_rider }}>
+    </td>
+    <td class="judge-group-cell">
+      <input type="number" class="js-input js-stock" min="1" max="25" step="0.5"
+             value="{{ s.stock_score if s.stock_score is not none else '' }}"
+             data-entry-id="{{ e.id }}" data-seat="{{ s.seat }}">
+    </td>
+    <td class="judge-group-cell">
+      <select class="js-input js-outcome" data-entry-id="{{ e.id }}" data-seat="{{ s.seat }}">
+        <option value="">—</option>
+        {% for code, label in judge_outcomes.items() %}
+        <option value="{{ code }}" {{ 'selected' if s.outcome == code }}>{{ code }}</option>
+        {% endfor %}
+      </select>
+      <button type="button" class="tiny js-clear" data-entry-id="{{ e.id }}" data-seat="{{ s.seat }}"
+              title="Clear this judge's score entirely">✕</button>
+    </td>
+    {% endfor %}
+    <td class="js-combined-rider">{{ '%.2f'|format(e.combined_rider) if e.combined_rider is not none else '—' }}</td>
+    <td class="js-combined-stock">{{ '%.2f'|format(e.combined_stock) if e.combined_stock is not none else '—' }}</td>
+    <td class="js-official">{{ e.display }}</td>
+    <td><button type="button" class="tiny js-finalize" data-entry-id="{{ e.id }}">Finalize</button></td>
+  </tr>
+  {% endfor %}
+</table>
+</div>
+{% endif %}
+
+<script>
+function judgeScoreGroup(entryId, seat) {
+  const sel = `[data-entry-id="${entryId}"][data-seat="${seat}"]`;
+  return {
+    rider: document.querySelector('.js-rider' + sel),
+    stock: document.querySelector('.js-stock' + sel),
+    outcome: document.querySelector('.js-outcome' + sel),
+  };
+}
+
+function updateCombinedCells(row, data) {
+  const riderCell = row.querySelector('.js-combined-rider');
+  const stockCell = row.querySelector('.js-combined-stock');
+  if (riderCell) riderCell.textContent = (data.combined_rider ?? null) === null ? '—' : data.combined_rider.toFixed(2);
+  if (stockCell) stockCell.textContent = (data.combined_stock ?? null) === null ? '—' : data.combined_stock.toFixed(2);
+}
+
+function saveJudgeGroup(entryId, seat) {
+  const row = document.querySelector(`tr[data-entry-id="${entryId}"]`);
+  const { rider, stock, outcome } = judgeScoreGroup(entryId, seat);
+  if (!stock.value) return; // stock is always required, same as the judge app -- nothing to save yet
+  const body = new URLSearchParams({
+    rider_score: rider.disabled ? '' : rider.value,
+    stock_score: stock.value,
+    outcome: outcome.value,
+  });
+  fetch(`/entries/${entryId}/judge_scores/${seat}/manual_set`, { method: 'POST', body })
+    .then(r => r.json())
+    .then(data => {
+      if (!data.ok) { alert(data.error || 'Could not save that score.'); return; }
+      updateCombinedCells(row, data);
+    })
+    .catch(() => alert('Could not reach the server -- that score may not be saved.'));
+}
+
+document.querySelectorAll('.js-rider, .js-stock').forEach(input => {
+  input.addEventListener('blur', function () {
+    saveJudgeGroup(input.dataset.entryId, input.dataset.seat);
+  });
+  input.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+  });
+});
+
+document.querySelectorAll('.js-outcome').forEach(select => {
+  select.addEventListener('change', function () {
+    const { rider } = judgeScoreGroup(select.dataset.entryId, select.dataset.seat);
+    const noRiderCodes = {{ judge_outcomes_no_rider|tojson }};
+    rider.disabled = noRiderCodes.includes(select.value);
+    if (rider.disabled) rider.value = '';
+    saveJudgeGroup(select.dataset.entryId, select.dataset.seat);
+  });
+});
+
+document.querySelectorAll('.js-clear').forEach(btn => {
+  btn.addEventListener('click', function () {
+    const entryId = btn.dataset.entryId, seat = btn.dataset.seat;
+    const row = document.querySelector(`tr[data-entry-id="${entryId}"]`);
+    fetch(`/entries/${entryId}/judge_scores/${seat}/clear`, { method: 'POST' })
+      .then(r => r.json())
+      .then(data => {
+        if (!data.ok) { alert(data.error || 'Could not clear that score.'); return; }
+        const { rider, stock, outcome } = judgeScoreGroup(entryId, seat);
+        rider.value = ''; rider.disabled = false;
+        stock.value = '';
+        outcome.value = '';
+        updateCombinedCells(row, data);
+      })
+      .catch(() => alert('Could not reach the server -- that score may not be cleared.'));
+  });
+});
+
+document.querySelectorAll('.js-finalize').forEach(btn => {
+  btn.addEventListener('click', function () {
+    const entryId = btn.dataset.entryId;
+    const row = document.querySelector(`tr[data-entry-id="${entryId}"]`);
+    fetch(`/entries/${entryId}/finalize_judge_score`, { method: 'POST' })
+      .then(r => r.json())
+      .then(data => {
+        if (!data.ok) { alert(data.error || 'Could not finalize this entry.'); return; }
+        row.querySelector('.js-official').textContent = data.display;
+      })
+      .catch(() => alert('Could not reach the server -- this entry may not be finalized.'));
+  });
+});
+</script>
+{% endblock %}

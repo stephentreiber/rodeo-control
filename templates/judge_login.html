@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Judge Login — {{ rodeo_name }}</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='judge.css') }}">
+</head>
+<body>
+<div class="judge-shell">
+  <h1>{{ rodeo_name }}</h1>
+  <p class="judge-subtitle">Tap your judge seat</p>
+  {% with messages = get_flashed_messages() %}
+    {% if messages %}
+    <p class="judge-error" style="margin-bottom: 20px;">{{ messages[0] }}</p>
+    {% endif %}
+  {% endwith %}
+  <div class="seat-grid">
+    {% for n in seats %}
+    <a class="seat-btn" href="{{ url_for('judge_score_page', seat=n) }}">{{ judge_names[n] }}</a>
+    {% endfor %}
+  </div>
+</div>
+<script>
+// Belt-and-suspenders on top of the touch-action CSS: iOS Safari/Chrome
+// (both WebKit) expose pinch gestures as their own gesturestart/
+// gesturechange events regardless of touch-action, and older iOS
+// versions have historically ignored the viewport meta tag's zoom
+// restrictions outright. Blocking these directly is the most reliable
+// way to actually stop pinch-zoom on this page.
+document.addEventListener('gesturestart', function(e) { e.preventDefault(); });
+document.addEventListener('gesturechange', function(e) { e.preventDefault(); });
+</script>
+</body>
+</html>

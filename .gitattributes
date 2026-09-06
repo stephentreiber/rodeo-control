@@ -1,0 +1,6 @@
+# Normalize line endings so this doesn't look like a wall of changed
+# lines the moment someone on a different OS opens and saves a file.
+# .bat files need real Windows CRLF to run correctly; everything else
+# (Python, templates, docs) stays LF regardless of which OS commits it.
+* text=auto eol=lf
+*.bat text eol=crlf

@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Announcer Screen — {{ rodeo_name }}</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='announcer.css') }}">
+<style>
+  /* Per-installation override from Settings -- comes after the
+     stylesheet link so these win the cascade over the defaults baked
+     into announcer.css's :root. */
+  :root {
+    --announcer-bg: {{ announcer_color_bg }};
+    --announcer-accent: {{ announcer_color_accent }};
+    --announcer-text: {{ announcer_color_text }};
+  }
+</style>
+</head>
+<body>
+<div class="announcer-shell">
+
+  <div class="announcer-topbar">
+    <h1 id="announcer-title">{{ rodeo_name }}</h1>
+    <span class="announcer-clock" id="announcer-clock"></span>
+  </div>
+
+  <div class="announcer-current" id="announcer-current"></div>
+
+  <div class="announcer-judges" id="announcer-judges"></div>
+
+  <div class="announcer-grid">
+    <div class="announcer-panel">
+      <h2 id="round-board-title">Round Leaderboard</h2>
+      <div id="round-board"></div>
+    </div>
+    <div class="announcer-panel">
+      <h2 id="agg-board-title">Aggregate</h2>
+      <div id="agg-board"></div>
+    </div>
+    <div class="announcer-panel">
+      <h2 id="stock-board-title">Top Stock Scores</h2>
+      <div id="stock-board"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+// Rendered entirely from JSON (both the first paint below and every
+// poll tick after) rather than duplicating markup between Jinja and
+// JS -- one render function is the only place that needs to know what
+// this screen looks like.
+const HEADER_TEXT = {{ rodeo_name|tojson }};
+
+function el(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text !== undefined && text !== null && text !== '') node.textContent = text;
+  return node;
+}
+
+function renderBoard(container, rows, emptyText, rowBuilder) {
+  container.replaceChildren();
+  if (!rows || !rows.length) {
+    container.appendChild(el('p', 'announcer-panel-empty', emptyText));
+    return;
+  }
+  const ol = el('ol', 'announcer-board');
+  rows.forEach((r, i) => ol.appendChild(rowBuilder(r, i)));
+  container.appendChild(ol);
+}
+
+function boardRow(rank, name, hometownOrSub, display, subClass) {
+  const li = el('li');
+  li.appendChild(el('span', 'announcer-rank', rank));
+  const nameSpan = el('span', 'announcer-board-name', name);
+  if (hometownOrSub) nameSpan.appendChild(el('span', subClass || 'announcer-board-hometown', hometownOrSub));
+  li.appendChild(nameSpan);
+  li.appendChild(el('span', 'announcer-board-score', display));
+  return li;
+}
+
+function renderStat(container, label, value, extraClass) {
+  if (!value) return;
+  const stat = el('div', 'announcer-stat');
+  stat.appendChild(el('span', 'announcer-stat-label', label));
+  stat.appendChild(el('span', 'announcer-stat-value' + (extraClass ? ' ' + extraClass : ''), value));
+  container.appendChild(stat);
+}
+
+function renderCurrent(data) {
+  const container = document.getElementById('announcer-current');
+  container.replaceChildren();
+  const current = data.current;
+  const extra = data.extra || {};
+
+  if (!current || !current.name) {
+    container.appendChild(el('p', 'announcer-current-empty', 'No contestant currently up.'));
+    return;
+  }
+
+  const idBlock = el('div', 'announcer-current-id');
+  idBlock.appendChild(el('p', 'announcer-current-name', current.name));
+
+  const subParts = [current.hometown];
+  if (current.partner) subParts.push('Partner: ' + current.partner);
+  if (current.draw_animal) subParts.push('Draw: ' + current.draw_animal);
+  idBlock.appendChild(el('p', 'announcer-current-sub', subParts.filter(Boolean).join('   |   ')));
+
+  if (current.event_name || current.round_name) {
+    const contextText = [current.event_name, current.round_name].filter(Boolean).join(' — ');
+    idBlock.appendChild(el('p', 'announcer-current-context', contextText));
+  }
+  if (current.notes) idBlock.appendChild(el('p', 'announcer-current-note', current.notes));
+  container.appendChild(idBlock);
+
+  const stats = el('div', 'announcer-current-stats');
+  renderStat(stats, 'Round Score', extra.round_score);
+  if (extra.time_plus_penalty && extra.time_plus_penalty.includes('+')) {
+    renderStat(stats, 'Time + Penalty', extra.time_plus_penalty, 'announcer-stat-value-small');
+  }
+  renderStat(stats, 'Round Rank', extra.round_rank, 'rank');
+  renderStat(stats, 'Aggregate', extra.aggregate_score);
+  // "To Lead" takes over the Agg Rank slot whenever there's a
+  // meaningful number to chase (before this ride is scored, and only
+  // when it would leave this contestant on the same head count as the
+  // current leader -- see _announcer_to_lead). Once scored, or when it
+  // doesn't apply, Agg Rank shows as usual.
+  renderStat(stats, 'To Lead', extra.to_lead);
+  if (!extra.to_lead) renderStat(stats, 'Agg Rank', extra.aggregate_rank, 'rank');
+  container.appendChild(stats);
+}
+
+function renderJudges(data) {
+  const container = document.getElementById('announcer-judges');
+  container.replaceChildren();
+  const judges = data.judge_breakdown || [];
+  judges.forEach((j) => {
+    const card = el('div', 'announcer-judge-card' + (j.submitted ? '' : ' announcer-judge-waiting'));
+    card.appendChild(el('span', 'announcer-judge-name', j.judge_name));
+    if (j.submitted) {
+      // Outcome and scores are NOT mutually exclusive -- a Re-Ride call
+      // still carries a real rider score (the cowboy decides whether to
+      // keep it), and stock is always scored independently of whatever
+      // happened with the rider (Buck Off, DQ, etc.), so the outcome
+      // badge and whichever marks exist are both shown together rather
+      // than the badge hiding the scores.
+      if (j.outcome) {
+        card.appendChild(el('span', 'announcer-judge-outcome', j.outcome));
+      }
+      if (j.rider_display || j.stock_display) {
+        const marks = el('span', 'announcer-judge-marks');
+        if (j.rider_display) {
+          const s = el('span', '', 'R ' + j.rider_display); s.title = 'Rider'; marks.appendChild(s);
+        }
+        if (j.stock_display) {
+          const s = el('span', '', 'S ' + j.stock_display); s.title = 'Stock'; marks.appendChild(s);
+        }
+        card.appendChild(marks);
+      }
+    } else {
+      card.appendChild(el('span', 'announcer-judge-pending', 'waiting…'));
+    }
+    container.appendChild(card);
+  });
+}
+
+function renderTitle(data) {
+  const parts = [HEADER_TEXT];
+  if (data.live_event_name) parts.push(data.live_event_name);
+  if (data.live_event_name && data.live_round_name) parts.push(data.live_round_name);
+  document.getElementById('announcer-title').textContent = parts.join(' — ');
+
+  document.getElementById('round-board-title').textContent =
+    'Round Leaderboard' + (data.live_round_name ? ' — ' + data.live_round_name : '');
+  document.getElementById('agg-board-title').textContent =
+    'Aggregate' + (data.live_event_name ? ' — ' + data.live_event_name : '');
+  document.getElementById('stock-board-title').textContent =
+    'Top Stock Scores' + (data.live_event_name ? ' — ' + data.live_event_name : '');
+}
+
+function renderAll(data) {
+  renderTitle(data);
+  renderCurrent(data);
+  renderJudges(data);
+  renderBoard(document.getElementById('round-board'), data.round_board,
+    'No scores yet for the live round.',
+    (r, i) => boardRow(i + 1, r.name, r.hometown, r.display));
+  renderBoard(document.getElementById('agg-board'), data.agg_board,
+    'No scores yet for this event.',
+    (r, i) => boardRow(i + 1, r.name, r.hometown, r.display));
+  renderBoard(document.getElementById('stock-board'), data.stock_top,
+    'No fully-judged stock scores yet for the live event.',
+    (s, i) => boardRow(i + 1, s.stock_name, s.rider_name + ' — ' + s.round_name, s.display, 'announcer-stock-sub'));
+}
+
+// Initial paint uses the data the server already rendered this page
+// with -- no network round-trip needed before something shows up.
+renderAll({{ data|tojson }});
+
+function announcerTick() {
+  const clockEl = document.getElementById('announcer-clock');
+  if (clockEl) clockEl.textContent = new Date().toLocaleTimeString([], {hour: '2-digit', minute: '2-digit', second: '2-digit'});
+}
+announcerTick();
+setInterval(announcerTick, 1000);
+
+// Fast poll instead of a full page reload -- a score, a judge's mark,
+// or Who's Up changing shows up here in well under a couple of
+// seconds, with no flicker and nothing to lose (there's no scroll
+// position or in-progress input on this screen to protect, so a plain
+// re-render on every tick is all this needs).
+let announcerPollInFlight = false;
+function announcerPoll() {
+  if (announcerPollInFlight) return;
+  announcerPollInFlight = true;
+  fetch('/announcer/data')
+    .then(r => r.json())
+    .then(data => renderAll(data))
+    .catch(() => {})
+    .finally(() => { announcerPollInFlight = false; });
+}
+setInterval(announcerPoll, 1200);
+</script>
+</body>
+</html>

@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Stock
+  <span class="tip" tabindex="0">?
+    <span class="tip-bubble">Pick a roughstock event to see how each animal scored, based only on the stock half
+    of what judges submit — completely independent of the rider's own score, so a buck off, no score, DQ, or
+    re-ride on the rider side never affects this. Ranked across every round of the event. Animals still waiting
+    on judges show as pending rather than being left out.</span>
+  </span>
+</h1>
+
+<form method="get" class="card-form">
+  <label>Event
+    <select name="event" onchange="this.form.submit()">
+      <option value="">Select event...</option>
+      {% for ev in events %}
+      <option value="{{ ev.id }}" {{ 'selected' if selected_event_id == ev.id|string }}>{{ ev.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+</form>
+
+{% if selected_event_id and rows %}
+<table class="list">
+  <tr>
+    <th>Rank</th>
+    <th>Stock</th>
+    <th>Score</th>
+    <th>Rider</th>
+    <th>Round</th>
+    <th>Draw #</th>
+  </tr>
+  {% for row in rows %}
+  <tr>
+    <td>{{ row.rank if row.rank else '—' }}</td>
+    <td>{{ row.stock_name }}</td>
+    <td>
+      {% if row.stock_score is not none %}
+        {{ '%.2f'|format(row.stock_score) }}
+      {% else %}
+        <span class="pending-note">{{ row.submitted_count }} of {{ row.judge_count }} judges</span>
+      {% endif %}
+    </td>
+    <td>{{ row.rider_name }}</td>
+    <td>{{ row.round_name }}</td>
+    <td>{{ row.draw_number or '' }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% elif selected_event_id %}
+<p><em>No stock scores submitted yet for this event.</em></p>
+{% endif %}
+{% endblock %}

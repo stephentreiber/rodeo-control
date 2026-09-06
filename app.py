@@ -345,7 +345,7 @@ def _get_live_panel_context(conn):
                c.name, c.hometown,
                COALESCE(pc.name, c.partner) as partner,
                pc.hometown as partner_hometown,
-               COALESCE(NULLIF(e.draw_animal, ''), c.draw_animal) as draw_animal,
+               COALESCE(e.draw_animal, '') as draw_animal,
                EXISTS(SELECT 1 FROM judge_scores js WHERE js.entry_id = e.id AND js.outcome = 'RR') as has_rr_flag
         FROM entries e
         JOIN competitors c ON e.competitor_id = c.id
@@ -460,7 +460,7 @@ def event_detail(eid):
                    c.name, c.hometown, c.partner_id,
                    COALESCE(pc.name, c.partner) as partner,
                    pc.hometown as partner_hometown,
-                   COALESCE(NULLIF(e.draw_animal, ''), c.draw_animal) as draw_animal,
+                   COALESCE(e.draw_animal, '') as draw_animal,
                    r.name as round_name, r.locked as round_locked,
                    EXISTS(SELECT 1 FROM judge_scores js WHERE js.entry_id = e.id AND js.outcome = 'RR') as has_rr_flag
             FROM entries e
@@ -481,7 +481,7 @@ def event_detail(eid):
                    c.name, c.hometown, c.partner_id,
                    COALESCE(pc.name, c.partner) as partner,
                    pc.hometown as partner_hometown,
-                   COALESCE(NULLIF(e.draw_animal, ''), c.draw_animal) as draw_animal,
+                   COALESCE(e.draw_animal, '') as draw_animal,
                    EXISTS(SELECT 1 FROM judge_scores js WHERE js.entry_id = e.id AND js.outcome = 'RR') as has_rr_flag
             FROM entries e
             JOIN competitors c ON e.competitor_id = c.id
@@ -518,6 +518,33 @@ def event_detail(eid):
         # empty options round after round.
         available = [c for c in available if c["id"] not in entered_ids and c["name"].strip()]
 
+    # "Copy from another round" -- e.g. pulling round 1's qualifiers into
+    # a short-go round 2, which typically has different stock than round
+    # 1 (so this deliberately does NOT bring the stock along -- see
+    # copy_competitors_to_round). Much faster than the one-at-a-time
+    # "Add to Draw" dropdown above for this specific, common workflow,
+    # since it's scoped to just this event's other rounds instead of
+    # every competitor in the database.
+    other_rounds = [r for r in rounds if str(r["id"]) != current_round_key] if current_round_key != "all" else []
+    copy_source_id = request.args.get("copy_source", "").strip()
+    copy_source_entries = []
+    if copy_source_id and any(str(r["id"]) == copy_source_id for r in other_rounds):
+        copy_source_entries = conn.execute(
+            """
+            SELECT c.id as competitor_id, c.name, c.hometown
+            FROM entries e
+            JOIN competitors c ON e.competitor_id = c.id
+            WHERE e.round_id = ? AND c.name != ''
+            ORDER BY e.draw_order
+            """,
+            (copy_source_id,),
+        ).fetchall()
+        # Don't re-offer anyone already entered in the round being built --
+        # they'd just show up as an accidental duplicate entry if checked.
+        copy_source_entries = [c for c in copy_source_entries if c["competitor_id"] not in entered_ids]
+    else:
+        copy_source_id = ""
+
     whos_up_entry_id = conn.execute("SELECT entry_id FROM whos_up WHERE id = 1").fetchone()["entry_id"]
 
     # The Current Contestant panel is deliberately independent of
@@ -544,6 +571,9 @@ def event_detail(eid):
         current_round=current_round_row,
         entries=entries,
         available=available,
+        other_rounds=other_rounds,
+        copy_source_id=copy_source_id,
+        copy_source_entries=copy_source_entries,
         whos_up_entry_id=whos_up_entry_id,
         is_team_event=is_team_event,
         panel_entries=panel_entries,
@@ -717,7 +747,7 @@ def judge_scores_table(eid):
         entry_rows = conn.execute(
             """
             SELECT e.id, e.draw_number, e.status, e.score_value,
-                   c.name, c.hometown, COALESCE(NULLIF(e.draw_animal, ''), c.draw_animal) as draw_animal,
+                   c.name, c.hometown, COALESCE(e.draw_animal, '') as draw_animal,
                    r.name as round_name
             FROM entries e
             JOIN competitors c ON e.competitor_id = c.id
@@ -731,7 +761,7 @@ def judge_scores_table(eid):
         entry_rows = conn.execute(
             """
             SELECT e.id, e.draw_number, e.status, e.score_value,
-                   c.name, c.hometown, COALESCE(NULLIF(e.draw_animal, ''), c.draw_animal) as draw_animal
+                   c.name, c.hometown, COALESCE(e.draw_animal, '') as draw_animal
             FROM entries e
             JOIN competitors c ON e.competitor_id = c.id
             WHERE e.round_id = ? ORDER BY e.draw_order
@@ -1086,6 +1116,56 @@ def add_to_round(rid):
     )
     conn.commit()
     conn.close()
+    return redirect(url_for("event_detail", eid=eid, round=rid))
+
+
+@app.route("/rounds/<int:rid>/copy_competitors", methods=["POST"])
+def copy_competitors_to_round(rid):
+    """Bulk-add a checked set of competitors from another round of the
+    SAME event into this one -- e.g. pulling round 1's qualifiers into a
+    short-go round 2. Much faster than the one-at-a-time "Add to Draw"
+    dropdown for this specific workflow, since the competitor list is
+    scoped to just this event's other rounds (see the copy_source_entries
+    query in event_detail) rather than every competitor in the database.
+
+    Deliberately does NOT carry over draw_number or draw_animal from the
+    source round -- both are per-round facts (an animal is drawn fresh
+    each round, and a short-go's running order is typically set
+    separately from round 1's), so each new entry starts blank and ready
+    for the actual short-go draw to be typed in, rather than silently
+    showing round 1's now-stale stock until someone happens to overwrite
+    it.
+    """
+    competitor_ids = request.form.getlist("competitor_id")
+    conn = get_conn()
+    eid = conn.execute("SELECT event_id FROM rounds WHERE id = ?", (rid,)).fetchone()["event_id"]
+
+    existing_ids = {
+        r["competitor_id"]
+        for r in conn.execute("SELECT competitor_id FROM entries WHERE round_id = ?", (rid,))
+    }
+    next_order = conn.execute(
+        "SELECT COALESCE(MAX(draw_order), 0) + 1 as n FROM entries WHERE round_id = ?", (rid,)
+    ).fetchone()["n"]
+
+    added = 0
+    for cid in competitor_ids:
+        cid = int(cid)
+        if cid in existing_ids:
+            continue  # already in this round -- don't create a duplicate entry
+        conn.execute(
+            "INSERT INTO entries (round_id, competitor_id, draw_order, status) VALUES (?, ?, ?, 'pending')",
+            (rid, cid, next_order),
+        )
+        next_order += 1
+        existing_ids.add(cid)
+        added += 1
+
+    conn.commit()
+    conn.close()
+    if added:
+        xml_export.export_all()
+        flash(f"Added {added} competitor{'s' if added != 1 else ''} to this round.")
     return redirect(url_for("event_detail", eid=eid, round=rid))
 
 
@@ -1515,7 +1595,8 @@ def whos_up_page():
     row = conn.execute(
         """
         SELECT c.name as c_name, c.hometown as c_hometown, c.sponsor as c_sponsor,
-               c.partner as c_partner, c.draw_animal as c_draw_animal, c.notes as c_notes,
+               c.partner as c_partner, c.notes as c_notes,
+               COALESCE(e.draw_animal, '') as e_draw_animal,
                ev.name as event_name, r.name as round_name,
                w.guest_id,
                g.name as g_name, g.hometown as g_hometown,
@@ -1543,7 +1624,7 @@ def whos_up_page():
     elif row and row["c_name"]:
         current = {
             "name": row["c_name"], "hometown": row["c_hometown"], "sponsor": row["c_sponsor"],
-            "partner": row["c_partner"], "draw_animal": row["c_draw_animal"], "notes": row["c_notes"],
+            "partner": row["c_partner"], "draw_animal": row["e_draw_animal"], "notes": row["c_notes"],
             "event_name": row["event_name"], "round_name": row["round_name"],
         }
 
@@ -1775,7 +1856,7 @@ def _judge_live_entry(conn):
         SELECT e.id as entry_id, e.draw_number, e.status, e.score_value,
                e.penalty, e.penalty_note, e.pending_penalty, e.pending_penalty_note,
                c.name as rider_name, c.hometown as rider_hometown,
-               COALESCE(NULLIF(e.draw_animal, ''), c.draw_animal) as stock_name,
+               COALESCE(e.draw_animal, '') as stock_name,
                COALESCE(pc.name, c.partner) as partner_name,
                pc.hometown as partner_hometown,
                ev.name as event_name, ev.scoring_type, ev.is_team,
@@ -2055,7 +2136,7 @@ def stock_page():
         entries = conn.execute(
             """
             SELECT e.id as entry_id, e.draw_number,
-                   COALESCE(NULLIF(e.draw_animal, ''), c.draw_animal) as stock_name,
+                   COALESCE(e.draw_animal, '') as stock_name,
                    c.name as rider_name,
                    r.name as round_name, r.round_number
             FROM entries e
@@ -2297,7 +2378,8 @@ def _announcer_current_contestant(conn):
     row = conn.execute(
         """
         SELECT c.name as c_name, c.hometown as c_hometown, c.sponsor as c_sponsor,
-               c.partner as c_partner, c.draw_animal as c_draw_animal, c.notes as c_notes,
+               c.partner as c_partner, c.notes as c_notes,
+               COALESCE(e.draw_animal, '') as e_draw_animal,
                ev.id as event_id, ev.name as event_name, ev.scoring_type,
                e.status as entry_status, e.competitor_id,
                r.name as round_name,
@@ -2324,7 +2406,7 @@ def _announcer_current_contestant(conn):
     elif row and row["c_name"]:
         current = {
             "name": row["c_name"], "hometown": row["c_hometown"], "sponsor": row["c_sponsor"],
-            "partner": row["c_partner"], "draw_animal": row["c_draw_animal"], "notes": row["c_notes"],
+            "partner": row["c_partner"], "draw_animal": row["e_draw_animal"], "notes": row["c_notes"],
             "event_name": row["event_name"], "round_name": row["round_name"],
         }
 
@@ -2481,7 +2563,7 @@ def _announcer_stock_top(conn):
     entries = conn.execute(
         """
         SELECT e.id as entry_id,
-               COALESCE(NULLIF(e.draw_animal, ''), c.draw_animal) as stock_name,
+               COALESCE(e.draw_animal, '') as stock_name,
                c.name as rider_name, r.name as round_name
         FROM entries e
         JOIN rounds r ON e.round_id = r.id

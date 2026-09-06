@@ -685,6 +685,31 @@ h1 .tip { font-size: 0.5em; }
 .round-admin-box .inline-form input[type="text"],
 .round-admin-box .inline-form input:not([type]) { width: 180px; }
 
+/* "Copy from another round" checklist -- e.g. pulling round 1's
+   qualifiers into a short-go round 2 in one action instead of the
+   one-at-a-time "Add to Draw" dropdown above it. */
+.copy-round-box { margin-top: 14px; padding-top: 14px; border-top: 1px dashed var(--color-border); }
+.copy-round-box select { width: 100%; margin-top: 4px; }
+.copy-round-actions { display: flex; gap: 8px; margin: 10px 0 6px; }
+.copy-round-list {
+  max-height: 220px;
+  overflow-y: auto;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 6px 10px;
+  margin-bottom: 8px;
+}
+.copy-round-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 0.92em;
+  font-weight: 400;
+}
+.copy-round-item input[type="checkbox"] { width: auto; margin: 0; }
+.copy-round-hometown { color: var(--color-text-muted); font-size: 0.9em; }
+
 /* Trash-can remove button in the draw table */
 .icon-btn {
   background: transparent !important;

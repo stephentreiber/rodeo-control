@@ -232,6 +232,44 @@
       </select>
       <button type="submit">+ Add to Draw</button>
     </form>
+
+    {% if other_rounds %}
+    <div class="copy-round-box">
+      <label>Copy from another round
+        <select name="copy_source" onchange="location.href='{{ url_for('event_detail', eid=event.id, round=current_round.id) }}&copy_source=' + this.value">
+          <option value="">Select a round...</option>
+          {% for r in other_rounds %}
+          <option value="{{ r.id }}" {{ 'selected' if copy_source_id == r.id|string }}>{{ r.name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+
+      {% if copy_source_id %}
+        {% if copy_source_entries %}
+        <form method="post" action="{{ url_for('copy_competitors_to_round', rid=current_round.id) }}" class="copy-round-checklist">
+          <div class="copy-round-actions">
+            <button type="button" class="tiny" onclick="document.querySelectorAll('.copy-round-checklist input[type=checkbox]').forEach(cb => cb.checked = true)">Select All</button>
+            <button type="button" class="tiny" onclick="document.querySelectorAll('.copy-round-checklist input[type=checkbox]').forEach(cb => cb.checked = false)">Select None</button>
+          </div>
+          <div class="copy-round-list">
+            {% for c in copy_source_entries %}
+            <label class="copy-round-item">
+              <input type="checkbox" name="competitor_id" value="{{ c.competitor_id }}" checked>
+              {{ c.name }}{% if c.hometown %} <span class="copy-round-hometown">({{ c.hometown }})</span>{% endif %}
+            </label>
+            {% endfor %}
+          </div>
+          <p class="settings-hint">Adds each checked competitor to this round with blank stock and draw number,
+          ready for the short-go draw -- their stock from the other round is deliberately not carried over, since
+          it's almost always different here.</p>
+          <button type="submit" class="button-primary">+ Add Selected to This Round</button>
+        </form>
+        {% else %}
+        <p class="settings-hint">Everyone in that round is already entered here.</p>
+        {% endif %}
+      {% endif %}
+    </div>
+    {% endif %}
   </div>
 
   <div class="round-admin-col">

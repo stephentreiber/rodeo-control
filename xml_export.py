@@ -280,7 +280,7 @@ def export_whos_up():
                c.name, c.hometown, c.sponsor, c.notes,
                COALESCE(pc.name, c.partner) as partner,
                pc.hometown as partner_hometown,
-               COALESCE(NULLIF(e.draw_animal, ''), c.draw_animal) as draw_animal,
+               COALESCE(e.draw_animal, '') as draw_animal,
                ev.id as event_id, ev.name as event_name, ev.scoring_type, ev.is_team,
                r.name as round_name, r.round_number,
                w.guest_id,
@@ -392,7 +392,7 @@ def export_round_leaderboard():
                 f"""
                 SELECT e.score_value, e.status, c.name, c.hometown, c.sponsor,
                        COALESCE(pc.name, c.partner) as partner,
-                       COALESCE(NULLIF(e.draw_animal, ''), c.draw_animal) as draw_animal
+                       COALESCE(e.draw_animal, '') as draw_animal
                 FROM entries e
                 JOIN competitors c ON e.competitor_id = c.id
                 LEFT JOIN competitors pc ON c.partner_id = pc.id

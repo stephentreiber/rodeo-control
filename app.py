@@ -29,6 +29,41 @@ STANDARD_EVENTS = [
     "Tie-Down Roping", "Team Roping", "Steer Wrestling", "Breakaway Roping",
 ]
 
+# Curated theme presets for the main app (Settings > Appearance) -- a
+# full raw color picker was tried once already and removed (see the
+# dead-settings cleanup in database.init_db), so this is a deliberately
+# small, capped set of pre-tested combinations instead of open-ended
+# customization. Each was chosen for two things: staying legible against
+# the app's fixed dark surfaces (--color-surface/-alt, --color-text),
+# and staying clearly distinct in hue from the app's fixed semantic
+# colors -- danger red (#e35c4e), success green (#3ecf7a), and
+# warning/penalty gold (#e0b23f) -- so a branding choice can never be
+# mistaken at a glance for an error, a save confirmation, or a penalty
+# flag during live scoring. "primary"/"accent" replace --color-primary/
+# --color-accent; "tint" replaces --color-tint (the very dark near-black
+# shade used for subtle backgrounds like the topbar and table headers).
+THEME_PRESETS = {
+    "blue":   {"label": "Ocean Blue",   "primary": "#3b5fd9", "accent": "#4f7cff", "tint": "#0a0e1a"},
+    "red":    {"label": "Burgundy Red", "primary": "#7a2b3d", "accent": "#a8455c", "tint": "#170a0d"},
+    "green":  {"label": "Forest Green", "primary": "#2e6b45", "accent": "#47a06a", "tint": "#0a140d"},
+    "orange": {"label": "Burnt Orange", "primary": "#b6531b", "accent": "#d97a3e", "tint": "#170f08"},
+    "purple": {"label": "Royal Purple", "primary": "#6b46c1", "accent": "#8b6cf0", "tint": "#120a1a"},
+    "teal":   {"label": "Deep Teal",    "primary": "#1f7a7a", "accent": "#2fb8b8", "tint": "#081414"},
+    "pink":   {"label": "Rose Pink",    "primary": "#ab3568", "accent": "#d1608f", "tint": "#170a12"},
+    "gray":   {"label": "Slate Gray",   "primary": "#4a5568", "accent": "#6b7a94", "tint": "#0d0f14"},
+}
+DEFAULT_THEME_PRESET = "blue"
+
+
+def _current_theme():
+    """The resolved (key, preset dict) for whatever's saved in Settings --
+    always a valid entry, even if the stored key is stale (e.g. a
+    preset removed in a future update) or missing entirely."""
+    key = get_setting("color_preset", DEFAULT_THEME_PRESET)
+    if key not in THEME_PRESETS:
+        key = DEFAULT_THEME_PRESET
+    return key, THEME_PRESETS[key]
+
 STATUS_LABELS = scoring.STATUS_LABELS
 
 
@@ -90,6 +125,7 @@ def inject_globals():
             live_round_numbers = [n["round_number"] for n in nums]
     conn.close()
     rodeo_name = get_setting("rodeo_name", "My Rodeo")
+    theme_key, theme = _current_theme()
     return {
         "rodeo_name": rodeo_name,
         "xml_export_status": xml_export.xml_export_status(),
@@ -100,6 +136,10 @@ def inject_globals():
         "nav_active_round_number": get_setting("active_round_number"),
         "judge_names": _judge_names(),
         "enable_video_review": _video_review_enabled(),
+        "theme_preset_key": theme_key,
+        "theme_primary": theme["primary"],
+        "theme_accent": theme["accent"],
+        "theme_tint": theme["tint"],
     }
 
 
@@ -2832,6 +2872,10 @@ def settings():
 
         set_setting("enable_video_review", "1" if request.form.get("enable_video_review") else "")
 
+        color_preset = request.form.get("color_preset", "").strip()
+        if color_preset in THEME_PRESETS:
+            set_setting("color_preset", color_preset)
+
         if request.form.get("reset_announcer_colors"):
             set_setting("announcer_color_bg", DEFAULT_SETTINGS["announcer_color_bg"])
             set_setting("announcer_color_accent", DEFAULT_SETTINGS["announcer_color_accent"])
@@ -2857,6 +2901,7 @@ def settings():
         announcer_color_text=get_setting("announcer_color_text", DEFAULT_SETTINGS["announcer_color_text"]),
         judge_url=_judge_url(),
         judge_qr_svg=_judge_qr_svg(),
+        theme_presets=THEME_PRESETS,
     )
 
 

@@ -7,6 +7,16 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Oswald:wght@500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+<style>
+  /* Per-installation theme override -- picked from Settings > Appearance
+     (see THEME_PRESETS in app.py). Comes after the stylesheet link so it
+     wins the cascade over style.css's :root defaults. */
+  :root {
+    --color-primary: {{ theme_primary }};
+    --color-accent: {{ theme_accent }};
+    --color-tint: {{ theme_tint }};
+  }
+</style>
 </head>
 <body id="top">
 <div class="sticky-header" id="sticky-header">
@@ -102,7 +112,7 @@
   {% endwith %}
   {% block content %}{% endblock %}
 </main>
-<footer class="build-stamp">Build 2026-09-06-c</footer>
+<footer class="build-stamp">Build 2026-09-06-d</footer>
 
 <a href="#top" id="back-to-top" class="back-to-top" title="Back to top">↑</a>
 

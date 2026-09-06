@@ -129,6 +129,15 @@ DEFAULT_SETTINGS = {
     # the VR code in the quick-entry score field only works once this is
     # explicitly turned on (see scoring.parse_score_input).
     "enable_video_review": "",
+    # Which preset from THEME_PRESETS (see app.py) the main app's theme
+    # uses -- a full raw color picker was tried and removed once
+    # already (see the dead-settings cleanup below), so this reintroduces
+    # customization as a small set of curated, pre-tested combinations
+    # instead, each chosen to stay legible against the app's fixed dark
+    # surfaces and to stay clearly distinct from the fixed semantic
+    # colors (danger red, success green, warning/penalty gold) so a
+    # theme choice can never be mistaken for one of those.
+    "color_preset": "blue",
 }
 
 

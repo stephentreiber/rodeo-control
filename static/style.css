@@ -1,13 +1,16 @@
 :root {
   /* Default modernized palette (2026 redesign, reference:
      trackscore.online) -- overridden per-installation via an inline
-     <style> block in base.html, generated from the colors saved on the
-     Settings page. Falls back to these if nothing's been customized
-     yet (fresh install). Deliberately just three customizable
-     variables: the semantic colors (red for errors/danger, green for
-     success, yellow for the live-row highlight) stay fixed on purpose,
-     so changing branding can't accidentally make an error look like a
-     success or blur what "live" means. */
+     <style> block in base.html, generated from whichever preset is
+     picked under Settings > Appearance (see THEME_PRESETS in app.py).
+     Falls back to these if nothing's been customized yet (fresh
+     install matches the "Ocean Blue" preset exactly). Deliberately just
+     three customizable variables: the semantic colors (red for
+     errors/danger, green for success, yellow for the live-row highlight
+     and penalty notes) stay fixed on purpose, so changing the theme
+     can't accidentally make an error look like a success or blur what
+     "live"/"penalized" means -- every preset is chosen to stay clearly
+     distinct from these three in hue. */
   --color-primary: #3b5fd9;
   --color-accent: #4f7cff;
   --color-tint: #0a0e1a;
@@ -724,6 +727,27 @@ h1 .tip { font-size: 0.5em; }
   border: 1px solid var(--color-border);
   border-radius: 4px;
   cursor: pointer;
+}
+
+/* Settings: main-app theme preset swatches -- a quick-pick row shown
+   under the dropdown, click to select the same as choosing it from the
+   dropdown. The active one gets a visible ring so it's clear what's
+   selected before hitting Save, even though the swatches themselves
+   are just each preset's "primary" shade (not the full palette). */
+.theme-preset-preview { display: flex; gap: 10px; margin: 10px 0 4px; flex-wrap: wrap; }
+.theme-preset-swatch {
+  display: inline-block;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 2px solid var(--color-border);
+  cursor: pointer;
+  transition: transform 0.1s, border-color 0.1s;
+}
+.theme-preset-swatch:hover { transform: scale(1.1); }
+.theme-preset-swatch.active {
+  border-color: var(--color-text);
+  box-shadow: 0 0 0 2px var(--color-surface), 0 0 0 4px var(--color-text);
 }
 
 .judge-name-row { display: flex; gap: 16px; margin: 10px 0 16px; flex-wrap: wrap; }

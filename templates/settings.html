@@ -43,6 +43,28 @@
   </div>
 
   <div class="settings-section">
+    <h2>Appearance</h2>
+
+    <label>Theme Color
+      <select name="color_preset" id="color-preset-select" onchange="updateThemePreview(this.value)">
+        {% for key, preset in theme_presets.items() %}
+        <option value="{{ key }}" {{ 'selected' if theme_preset_key == key }}>{{ preset.label }}{{ ' (default)' if key == 'blue' }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <p class="settings-hint">A small set of pre-tested combinations rather than free-form color control (full
+    customization was tried once and removed -- it made it too easy to end up with something hard to read).
+    Each option is chosen to stay clearly distinct from the app's fixed red/green/gold used for errors, saved
+    scores, and penalties, so a theme choice is never mistaken for one of those.</p>
+    <div class="theme-preset-preview" id="theme-preset-preview">
+      {% for key, preset in theme_presets.items() %}
+      <span class="theme-preset-swatch {{ 'active' if theme_preset_key == key }}" data-key="{{ key }}"
+            style="background: {{ preset.primary }};" title="{{ preset.label }}"></span>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="settings-section">
     <h2>Judges &amp; Colors</h2>
 
     <label>Number of Judges (Roughstock Events)
@@ -140,4 +162,22 @@
 </div>
 
 </div>
+<script>
+// Clicking a swatch picks that preset in the dropdown (and vice versa) --
+// just a quicker way to select one than opening the dropdown, with the
+// currently-selected swatch always highlighted so it's clear what's
+// active before hitting Save.
+function updateThemePreview(key) {
+  document.querySelectorAll('.theme-preset-swatch').forEach(function(sw) {
+    sw.classList.toggle('active', sw.dataset.key === key);
+  });
+}
+document.querySelectorAll('.theme-preset-swatch').forEach(function(sw) {
+  sw.addEventListener('click', function() {
+    const select = document.getElementById('color-preset-select');
+    if (select) select.value = sw.dataset.key;
+    updateThemePreview(sw.dataset.key);
+  });
+});
+</script>
 {% endblock %}

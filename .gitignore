@@ -12,6 +12,11 @@ exports/*.xml
 # to one machine's in-progress import, not something to version.
 import_cache/*
 
+# Auto-generated safety copies made right before a "Restore from file"
+# (see backup_import in app.py) -- local safety net, not something to
+# version or ship.
+backups/
+
 # Python
 __pycache__/
 *.pyc

@@ -186,8 +186,22 @@ def _parse_draw_rows(rows):
             # re-ride actually happens, instead of the stock silently
             # vanishing from the import or "RR" showing as if it were a
             # contestant's name.
+            #
+            # Cell count varies by source: HTML/xlsx keep a genuinely
+            # blank middle (locale) cell, so the stock is always in
+            # vals[2] ("RR", "", "stock") -- but a text/PDF line has
+            # nothing to hold that blank column open, so the gap either
+            # side of it merges into one and the stock lands in vals[1]
+            # instead ("RR", "stock"). Prefer vals[2] when present, fall
+            # back to vals[1] otherwise, so the stock isn't silently
+            # dropped either way.
             if current_round is not None:
-                draw_animal = format_draw_animal(vals[2]) if len(vals) > 2 else ""
+                if len(vals) > 2:
+                    draw_animal = format_draw_animal(vals[2])
+                elif len(vals) > 1:
+                    draw_animal = format_draw_animal(vals[1])
+                else:
+                    draw_animal = ""
                 current_round["entries"].append(
                     {
                         "draw_number": None,
@@ -295,20 +309,31 @@ def parse_xlsx_draw_sheet(file_bytes):
 
 
 _MULTISPACE = re.compile(r"\s{2,}")
+_HEADER_LINE = re.compile(r"^(EVENT|PERFORMANCE|SLACK\s+PERF)\b", re.IGNORECASE)
 
 
 def _split_text_line(line):
     """Turns one line of extracted/OCR'd PDF text into cell values. These
     source draw sheets use literal "|" column separators even in their
     plain-text/PDF renderings (matching the HTML version), so that's the
-    primary split. OCR output is less reliable about preserving "|"
-    characters, so if none survived, fall back to splitting on runs of
-    2+ spaces, which is usually how columns are visually separated."""
+    primary split. Failing that, fixed-width sheets (e.g. the CPRA
+    format) align columns with genuine runs of 2+ spaces once extracted
+    with layout preserved (see parse_pdf_draw_sheet) -- but EVENT/
+    PERFORMANCE/SLACK PERF header lines are deliberately kept as a single
+    cell even when a wide gap happens to land right after the keyword
+    (e.g. "EVENT     :SADDLE BRONC"), since those have their own
+    dedicated regex-based cleanup (_clean_event_name/_clean_round_name)
+    that expects the whole line, not just the word "EVENT" with the
+    actual event name split off into a second cell. OCR output is less
+    reliable about preserving "|" or consistent spacing at all, so this
+    is best-effort for OCR'd lines specifically."""
     line = line.strip()
     if not line:
         return []
     if "|" in line:
         return [cell.strip() for cell in line.split("|")]
+    if _HEADER_LINE.match(line):
+        return [line]
     return [cell.strip() for cell in _MULTISPACE.split(line)]
 
 
@@ -328,7 +353,15 @@ def parse_pdf_draw_sheet(file_bytes):
     try:
         with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
             for page_num, page in enumerate(pdf.pages, start=1):
-                text = page.extract_text() or ""
+                # layout=True preserves the source PDF's actual column
+                # alignment as genuine runs of 2+ spaces (fixed-width
+                # sheets like the CPRA format use real column gaps, not
+                # just single spaces between words) -- the default mode
+                # collapses all whitespace to single spaces and silently
+                # destroys that structure, which is what was letting
+                # entire rows (name + hometown + stock) get parsed as one
+                # unsplit blob instead of three separate fields.
+                text = page.extract_text(layout=True) or ""
                 if len(text.strip()) < 20:
                     # Little to no extractable text -- likely a scanned
                     # image page. Fall back to OCR for this page only.

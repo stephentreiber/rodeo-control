@@ -300,7 +300,7 @@ def _get_live_panel_context(conn):
 
     raw_entries = conn.execute(
         """
-        SELECT e.id, e.draw_number, e.score_value, e.status, e.re_ride_taken,
+        SELECT e.id, e.competitor_id, e.draw_number, e.score_value, e.status, e.re_ride_taken,
                e.penalty_note, e.pending_penalty, e.pending_penalty_note, e.pending_score,
                c.name, c.hometown,
                COALESCE(pc.name, c.partner) as partner,
@@ -315,6 +315,15 @@ def _get_live_panel_context(conn):
         """,
         (live["round_id"],),
     ).fetchall()
+
+    # Computed once per round (not once per entry) -- see _aggregate_standings --
+    # so browsing every contestant in a big round doesn't re-run the same
+    # standings query over and over. Judged events only; timed events get a
+    # blank to_lead for every entry without needing this at all.
+    agg_rows, agg_leader = (
+        _aggregate_standings(conn, live_event["id"]) if live_event["scoring_type"] == "judged" else ([], None)
+    )
+    judge_count = _judge_count() if live_event["scoring_type"] == "judged" else 0
 
     panel_entries = []
     current_index = 0
@@ -343,6 +352,14 @@ def _get_live_panel_context(conn):
                 # computed score sits here, not yet counted, until the
                 # scorekeeper resolves it (see resolve_video_review).
                 "pending_score": e["pending_score"],
+                # What this contestant needs to post on THIS ride to take
+                # over 1st in the aggregate standings -- see _to_lead_for.
+                # Blank for timed events, already-scored entries, and any
+                # entry where taking the lead doesn't hinge on a specific
+                # number (see the docstring on _announcer_to_lead).
+                "to_lead": _to_lead_for(
+                    agg_rows, agg_leader, live_event["scoring_type"], e["competitor_id"], e["status"], judge_count
+                ),
             }
         )
         if e["id"] == whos_up_entry_id:
@@ -2165,6 +2182,50 @@ ANNOUNCER_AGG_BOARD_LIMIT = 8
 ANNOUNCER_STOCK_TOP_N = 5
 
 
+def _aggregate_standings(conn, event_id):
+    """Current completed-head/score totals per competitor for this event,
+    plus whichever row currently leads (most head, tie-broken by highest
+    total). Shared by every "what does this contestant need to take the
+    lead" computation (Announcer Screen, Current Contestant panel) so
+    scanning a whole round doesn't re-run this query once per entry.
+    Returns (rows, leader) -- leader is None if nobody's scored yet."""
+    round_ids = [r["id"] for r in conn.execute("SELECT id FROM rounds WHERE event_id = ?", (event_id,))]
+    if not round_ids:
+        return [], None
+    placeholders = ",".join("?" * len(round_ids))
+    rows = conn.execute(
+        f"""
+        SELECT competitor_id, SUM(score_value) as total, COUNT(*) as head
+        FROM entries
+        WHERE round_id IN ({placeholders}) AND status = 'scored'
+        GROUP BY competitor_id
+        """,
+        round_ids,
+    ).fetchall()
+    if not rows:
+        return rows, None
+    leader = sorted(rows, key=lambda r: (-r["head"], -r["total"]))[0]
+    return rows, leader
+
+
+def _to_lead_for(rows, leader, scoring_type, competitor_id, entry_status, judge_count):
+    """What this contestant needs to post on THIS ride to take over 1st
+    in the aggregate standings, given already-fetched _aggregate_standings
+    results -- see _announcer_to_lead below for the full reasoning.
+    Judged events only; blank whenever taking the lead doesn't actually
+    hinge on hitting a particular score."""
+    if scoring_type != "judged" or entry_status == "scored" or leader is None:
+        return ""
+    own = next((r for r in rows if r["competitor_id"] == competitor_id), None)
+    own_total = own["total"] if own else 0
+    own_head = own["head"] if own else 0
+    if own_head + 1 != leader["head"]:
+        return ""
+    increment = 0.5 if judge_count == 2 else 0.25
+    needed_score = (leader["total"] + increment) - own_total
+    return scoring.format_number(needed_score, "judged")
+
+
 def _announcer_to_lead(conn, event_id, scoring_type, competitor_id, entry_status):
     """What this contestant needs to post on THIS ride to take over 1st in
     the aggregate standings -- takes over the same slot Agg Rank
@@ -2185,36 +2246,8 @@ def _announcer_to_lead(conn, event_id, scoring_type, competitor_id, entry_status
     1st automatically regardless of score. Only when this ride would
     leave them on the SAME head count as the leader is there an actual
     number to chase."""
-    if scoring_type != "judged" or entry_status == "scored":
-        return ""
-
-    round_ids = [r["id"] for r in conn.execute("SELECT id FROM rounds WHERE event_id = ?", (event_id,))]
-    if not round_ids:
-        return ""
-    placeholders = ",".join("?" * len(round_ids))
-    rows = conn.execute(
-        f"""
-        SELECT competitor_id, SUM(score_value) as total, COUNT(*) as head
-        FROM entries
-        WHERE round_id IN ({placeholders}) AND status = 'scored'
-        GROUP BY competitor_id
-        """,
-        round_ids,
-    ).fetchall()
-    if not rows:
-        return ""  # nobody's scored yet this event -- nothing to beat
-
-    leader = sorted(rows, key=lambda r: (-r["head"], -r["total"]))[0]
-    own = next((r for r in rows if r["competitor_id"] == competitor_id), None)
-    own_total = own["total"] if own else 0
-    own_head = own["head"] if own else 0
-
-    if own_head + 1 != leader["head"]:
-        return ""
-
-    increment = 0.5 if _judge_count() == 2 else 0.25
-    needed_score = (leader["total"] + increment) - own_total
-    return scoring.format_number(needed_score, "judged")
+    rows, leader = _aggregate_standings(conn, event_id)
+    return _to_lead_for(rows, leader, scoring_type, competitor_id, entry_status, _judge_count())
 
 
 def _announcer_current_contestant(conn):

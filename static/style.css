@@ -426,6 +426,18 @@ tr.live { background: var(--color-warning-bg) !important; }
 .cp-body > div { min-width: 0; }
 .cp-name-block .cp-name { font-size: 2em; font-weight: 800; color: var(--color-text); line-height: 1.15; word-break: break-word; }
 .cp-name-block .cp-hometown { font-size: 1.1em; color: var(--color-accent); font-weight: 600; margin-top: 2px; }
+/* Only ever shown for judged events, before a score exists, when
+   taking over 1st actually hinges on a specific number -- see
+   _to_lead_for. Empty the rest of the time (:not(:empty) pattern used
+   throughout this panel for the same reason). */
+.cp-to-lead {
+  display: none;
+  font-size: 1em;
+  font-weight: 700;
+  color: var(--color-success);
+  margin-top: 4px;
+}
+.cp-to-lead:not(:empty) { display: block; }
 .cp-stock-block .cp-stock-label {
   display: block;
   font-size: 0.75em;

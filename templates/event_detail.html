@@ -70,6 +70,7 @@
     <div class="cp-name-block">
       <div class="cp-name" id="cp-name"></div>
       <div class="cp-hometown" id="cp-hometown"></div>
+      <div class="cp-to-lead" id="cp-to-lead"></div>
     </div>
     <div class="cp-stock-block">
       <span class="cp-stock-label" id="cp-stock-label">{{ 'Heeler' if panel_is_team_event else 'Draw Animal' }}</span>
@@ -343,6 +344,8 @@ function cpRender() {
     if (eventContextEl) eventContextEl.textContent = CP_EVENT_NAME || '';
     document.getElementById('cp-name').textContent = e.name || '';
     document.getElementById('cp-hometown').textContent = e.hometown || '';
+    const toLeadEl = document.getElementById('cp-to-lead');
+    if (toLeadEl) toLeadEl.textContent = e.to_lead ? ('To Lead: ' + e.to_lead) : '';
     const stockLabelEl = document.getElementById('cp-stock-label');
     if (stockLabelEl) stockLabelEl.textContent = CP_IS_TEAM ? 'Heeler' : 'Draw Animal';
     if (CP_IS_TEAM) {
@@ -1052,6 +1055,10 @@ function syncPanelFromRow(entryId, display, status, penaltyNote) {
   if (idx === -1) return;
   CP_ENTRIES[idx].display = display;
   if (status) CP_ENTRIES[idx].status = status;
+  // A freshly-scored entry never shows To Lead server-side either (see
+  // _to_lead_for) -- clear it immediately rather than leaving the
+  // pre-score figure visible until the next 8s poll catches up.
+  if (status === 'scored') CP_ENTRIES[idx].to_lead = '';
   if (penaltyNote !== undefined) CP_ENTRIES[idx].penalty_note = penaltyNote;
   if (CP_ENTRIES[CP_INDEX] && String(CP_ENTRIES[CP_INDEX].id) === String(entryId)) {
     const cpInput = document.getElementById('cp-score-input');
@@ -1062,6 +1069,10 @@ function syncPanelFromRow(entryId, display, status, penaltyNote) {
     if (penaltyNote !== undefined) {
       const noteEl = document.getElementById('cp-penalty-note');
       if (noteEl) noteEl.textContent = penaltyNote;
+    }
+    if (status === 'scored') {
+      const toLeadEl = document.getElementById('cp-to-lead');
+      if (toLeadEl) toLeadEl.textContent = '';
     }
   }
 }

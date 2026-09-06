@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block content %}
-<h1>Review Import
+<h1>Select &amp; Rename Rounds
   <span class="tip" tabindex="0">?
     <span class="tip-bubble">Round names keep their original text from the page (handy for navigating) — the
     <strong>Round #</strong> column is separate and only affects leaderboard grouping. Multiple performances given
@@ -17,11 +17,11 @@
 </div>
 {% endif %}
 
-<form method="post" action="{{ url_for('import_confirm') }}">
+<form method="post" action="{{ url_for('import_review') }}">
   <input type="hidden" name="token" value="{{ token }}">
 
   <p>
-    <button type="submit" class="button-primary">Import Selected Rounds</button>
+    <button type="submit" class="button-primary">Continue to Review</button>
   </p>
 
   <p>
@@ -75,7 +75,7 @@
   </table>
   {% endfor %}
 
-  <p><button type="submit">Import Selected Rounds</button></p>
+  <p><button type="submit">Continue to Review</button></p>
 </form>
 
 <p><a href="{{ url_for('import_page') }}">← Start over</a></p>

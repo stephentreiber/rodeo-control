@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Review Competitors
+  <span class="tip" tabindex="0">?
+    <span class="tip-bubble">
+      Everything below is exactly what will be written to the database. Fix anything the
+      importer (or OCR, if a scanned page was involved) got wrong before importing — a typo
+      here becomes a real competitor record, so this is the easy time to catch it.
+    </span>
+  </span>
+</h1>
+
+<form method="post" action="{{ url_for('import_finalize') }}">
+  <input type="hidden" name="token" value="{{ token }}">
+  <p><button type="submit" class="button-primary">Import These Competitors</button></p>
+
+  {% set gi = namespace(n=0) %}
+  {% for rnd in rounds %}
+  <h2>{{ rnd.event_name }} <small>— {{ rnd.round_name }}</small></h2>
+  <table class="list review-import-table">
+    <tr>
+      <th>#</th>
+      <th>Name</th>
+      <th>Hometown</th>
+      <th>{{ 'Heeler' if rnd.is_team else 'Draw Animal' }}</th>
+      {% if rnd.is_team %}<th>Header</th>{% endif %}
+    </tr>
+    {% for entry in rnd.entries %}
+    {% set this_gi = gi.n %}
+    {% set gi.n = gi.n + 1 %}
+    <tr>
+      <td>{{ entry.draw_number if entry.draw_number is not none else '(RR)' }}</td>
+      <td><input type="text" name="entry_name__{{ this_gi }}" value="{{ entry.name }}"></td>
+      <td><input type="text" name="entry_hometown__{{ this_gi }}" value="{{ entry.hometown }}"></td>
+      <td><input type="text" name="entry_draw_animal__{{ this_gi }}" value="{{ entry.draw_animal }}"></td>
+      {% if rnd.is_team %}
+      <td><input type="text" name="entry_partner__{{ this_gi }}" value="{{ entry.partner }}"></td>
+      {% else %}
+      <input type="hidden" name="entry_partner__{{ this_gi }}" value="{{ entry.partner }}">
+      {% endif %}
+    </tr>
+    {% endfor %}
+  </table>
+  {% endfor %}
+
+  <p><button type="submit" class="button-primary">Import These Competitors</button></p>
+</form>
+
+<p><a href="{{ url_for('import_page') }}">← Start over</a></p>
+{% endblock %}

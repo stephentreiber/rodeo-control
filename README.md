@@ -343,8 +343,8 @@ machines can see, instead of the local `exports` folder.
 ## 6. Importing a draw from RodeoCanada
 
 Instead of typing in every competitor by hand, go to **Import Draw** in the
-nav bar and either upload a saved draw sheet HTML page or paste the HTML
-directly. It automatically:
+nav bar and upload a saved draw sheet — **HTML**, **Excel (.xlsx)**, or
+**PDF** — or paste HTML directly. It automatically:
 
 - Splits the page into events, rounds (including slack performances), and
   competitors
@@ -361,9 +361,22 @@ directly. It automatically:
 - Recognizes existing competitors by name so the same person entered in
   multiple events (e.g. saddle bronc and team roping) doesn't get duplicated
 
+**PDF draw sheets**: text-based PDFs are read directly. A page that turns
+out to be a scanned image (no text layer) is automatically read with OCR
+instead — you'll see a warning flagging exactly which page(s) needed OCR, so
+you know where to look closely on the review screen below. OCR requires
+**Tesseract OCR** and **Poppler** to be installed on this machine separately
+(they're not Python packages, so `pip install` alone won't get them):
+- Windows: install [Tesseract](https://github.com/UB-Mannheim/tesseract/wiki)
+  and [Poppler for Windows](https://github.com/oschwartz10612/poppler-windows/releases),
+  and make sure both are on your `PATH`.
+- If neither is installed, HTML/Excel import and text-based PDF import still
+  work fine — only scanned/image PDFs need them, and you'll get a clear
+  message instead of a crash if OCR is attempted without them.
+
 After uploading, you'll see a preview broken down by event and round with
 everything checked by default — click anywhere on a round's row (not just
-the tiny checkbox) to toggle it — and hit **Import Selected Rounds** (the
+the tiny checkbox) to toggle it — and hit **Continue to Review** (the
 button appears both at the top and bottom of the page, so you never have to
 scroll down to it after reviewing).
 
@@ -377,11 +390,18 @@ and for other rows above it also left on auto. There's also an "Apply Round # to
 the top of the page — check the performances that belong together (e.g. all
 the slack performances), pick the round number, hit **Apply to Selected**,
 and repeat for the next group. Draw order is preserved within each import.
-You can still add competitors manually or adjust anything afterward.
+
+**Review screen**: before anything is written to the database, you'll see
+every competitor about to be added — grouped by event/round, one dense
+table per round — with editable Name / Hometown / Draw Animal (and Partner,
+for team roping) fields pre-filled from the import. This is the place to
+fix anything the importer (or OCR) got wrong; hit **Import These
+Competitors** once everything looks right. You can still add competitors
+manually or adjust anything afterward, too.
 
 This is tuned to the RodeoCanada draw sheet layout specifically. If another
-association's site is laid out differently and the import misses things,
-open an issue with a sample page and the parser can be extended.
+association's site or file is laid out differently and the import misses
+things, open an issue with a sample file and the parser can be extended.
 
 Made a mistake on a round number after importing? Open that round's tab and
 use the **Edit this round** section — you can change its name and/or round

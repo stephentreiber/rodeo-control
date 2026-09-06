@@ -212,6 +212,13 @@ button.danger { background: var(--color-danger); }
 button.tiny { padding: 2px 6px; font-size: 0.8em; }
 table.list button { padding: 4px 10px; font-size: 0.85em; }
 table.list button.tiny { padding: 2px 6px; }
+
+/* Post-import competitor review screen: one dense, easy-to-scan table
+   per round. Inputs fill their cell so long OCR'd/typo'd values are
+   still fully visible and editable rather than clipped. */
+.review-import-table td { padding: 4px 8px; }
+.review-import-table input[type="text"] { width: 100%; padding: 4px 6px; box-sizing: border-box; }
+.review-import-table td:first-child { text-align: center; width: 40px; }
 .badge { background: var(--color-danger); color: var(--color-text); padding: 3px 8px; border-radius: 3px; font-size: 0.85em; }
 .event-tabs { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 2px solid var(--color-primary); margin-bottom: 16px; }
 .event-tab { padding: 8px 16px; background: var(--color-tint); color: var(--color-primary); text-decoration: none; border-radius: 6px 6px 0 0; font-weight: 600; font-size: 0.9em; }
@@ -416,6 +423,7 @@ tr.live { background: var(--color-warning-bg) !important; }
   gap: 24px;
   align-items: center;
 }
+.cp-body > div { min-width: 0; }
 .cp-name-block .cp-name { font-size: 2em; font-weight: 800; color: var(--color-text); line-height: 1.15; word-break: break-word; }
 .cp-name-block .cp-hometown { font-size: 1.1em; color: var(--color-accent); font-weight: 600; margin-top: 2px; }
 .cp-stock-block .cp-stock-label {
@@ -429,29 +437,24 @@ tr.live { background: var(--color-warning-bg) !important; }
 }
 .cp-stock-value { font-size: 1.3em; font-weight: 700; color: var(--color-text); word-break: break-word; }
 .cp-stock-sub { font-size: 0.95em; color: var(--color-text-muted); }
-.cp-score-block { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
-.cp-score-row { display: flex; align-items: center; gap: 8px; }
-.cp-score-input { font-size: 1.6em; width: 140px; padding: 8px; text-align: center; }
-.cp-penalty-buttons { position: relative; display: flex; gap: 6px; align-items: center; }
+.cp-score-block { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; min-width: 0; max-width: 100%; }
+.cp-score-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; max-width: 100%; }
+.cp-score-input { font-size: 1.6em; width: 140px; padding: 8px; text-align: center; flex: 0 0 auto; }
+.cp-penalty-buttons { position: relative; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; max-width: 100%; }
 .penalty-controls { position: relative; display: inline-block; }
 .cp-pending-penalty {
   display: none;
-  position: absolute;
-  left: 100%;
-  top: 50%;
-  transform: translateY(-50%);
-  margin-left: 8px;
-  white-space: nowrap;
+  white-space: normal;
+  word-break: break-word;
+  max-width: 100%;
   font-size: 0.85em;
   font-weight: 700;
   color: var(--color-danger);
   background: var(--color-danger-bg);
   padding: 2px 8px;
   border-radius: 10px;
-  z-index: 5;
-  pointer-events: none;
 }
-.cp-pending-penalty:not(:empty) { display: block; }
+.cp-pending-penalty:not(:empty) { display: inline-block; }
 
 /* Breakdown of what's already folded into the applied penalty (e.g.
    "Barrier +10") -- separate from the pending badge above, which is
@@ -470,7 +473,9 @@ tr.live { background: var(--color-warning-bg) !important; }
   padding: 4px 10px;
   border-radius: 6px;
   margin-left: 10px;
-  white-space: nowrap;
+  white-space: normal;
+  word-break: break-word;
+  max-width: 100%;
 }
 .cp-penalty-note:not(:empty) { display: inline-block; }
 

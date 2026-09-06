@@ -1,15 +1,17 @@
 {% extends "base.html" %}
 {% block content %}
-<h1>Import Draw from RodeoCanada HTML</h1>
-<p>Upload a saved draw sheet page (or paste the HTML) and this will pull out
+<h1>Import Draw Sheet</h1>
+<p>Upload a saved draw sheet — HTML, Excel (.xlsx), or PDF — and this will pull out
 competitors, hometowns, draw numbers, and draw animals automatically —
-including team roping partners on the line below each header.</p>
+including team roping partners on the line below each header. Scanned/image-based
+PDFs are read with OCR automatically; you'll get a chance to double-check anything
+OCR had to guess on the review screen before anything is imported.</p>
 
 <form method="post" action="{{ url_for('import_preview') }}" enctype="multipart/form-data" class="card-form">
-  <label>Upload HTML file
-    <input type="file" name="html_file" accept=".html,.htm">
+  <label>Upload draw sheet file
+    <input type="file" name="draw_file" accept=".html,.htm,.xlsx,.xls,.pdf">
   </label>
-  <p><em>or</em></p>
+  <p><em>or, for HTML only</em></p>
   <label>Paste HTML
     <textarea name="html_paste" rows="10" style="width:100%;"></textarea>
   </label>

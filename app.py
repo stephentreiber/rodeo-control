@@ -2560,22 +2560,38 @@ def import_page():
     return render_template("import.html")
 
 
+def _import_ext(filename):
+    return os.path.splitext(filename or "")[1].lower()
+
+
 @app.route("/import/preview", methods=["POST"])
 def import_preview():
-    html_text = None
-    uploaded = request.files.get("html_file")
-    if uploaded and uploaded.filename:
-        html_text = uploaded.read().decode("utf-8", errors="replace")
-    elif request.form.get("html_paste", "").strip():
-        html_text = request.form["html_paste"]
+    uploaded = request.files.get("draw_file")
+    pasted_html = request.form.get("html_paste", "").strip()
 
-    if not html_text:
-        flash("Please upload an HTML file or paste HTML content.")
+    if uploaded and uploaded.filename:
+        ext = _import_ext(uploaded.filename)
+        file_bytes = uploaded.read()
+        if ext in (".xlsx", ".xls"):
+            result = importer.parse_xlsx_draw_sheet(file_bytes)
+        elif ext == ".pdf":
+            result = importer.parse_pdf_draw_sheet(file_bytes)
+        elif ext in (".html", ".htm"):
+            result = importer.parse_rodeocanada_html(file_bytes.decode("utf-8", errors="replace"))
+        else:
+            flash("Unsupported file type. Please upload an HTML, Excel (.xlsx), or PDF draw sheet.")
+            return redirect(url_for("import_page"))
+    elif pasted_html:
+        result = importer.parse_rodeocanada_html(pasted_html)
+    else:
+        flash("Please upload a draw sheet file (HTML, Excel, or PDF) or paste HTML content.")
         return redirect(url_for("import_page"))
 
-    result = importer.parse_rodeocanada_html(html_text)
     if not result["events"]:
-        flash("No events could be found in that file. Double check it's a draw sheet page.")
+        if result["warnings"]:
+            flash(result["warnings"][0])
+        else:
+            flash("No events could be found in that file. Double check it's a draw sheet page.")
         return redirect(url_for("import_page"))
 
     token = uuid.uuid4().hex
@@ -2623,8 +2639,15 @@ def import_preview():
     )
 
 
-@app.route("/import/confirm", methods=["POST"])
-def import_confirm():
+@app.route("/import/review", methods=["POST"])
+def import_review():
+    """Second step: takes the round selection/renaming from the preview
+    screen and flattens every entry in every selected round into one
+    editable list, so the scorekeeper can correct anything the importer
+    got wrong (a name OCR misread, a hometown missing its comma, etc.)
+    before anything actually lands in the database. Stages the result
+    under its own cache token -- separate from the raw-parse token --
+    since this is now the "ready to write, pending edits" version."""
     token = request.form.get("token", "")
     cache_path = os.path.join(IMPORT_CACHE_DIR, f"{token}.json")
     if not os.path.exists(cache_path):
@@ -2636,76 +2659,119 @@ def import_confirm():
 
     selected_round_keys = set(request.form.getlist("round_key"))  # "eventIdx:roundIdx"
 
-    conn = get_conn()
-    competitors_created = 0
-    entries_created = 0
-
+    staged_rounds = []
     for ei, ev in enumerate(result["events"]):
-        event_id = None
         for ri, rnd in enumerate(ev["rounds"]):
             key = f"{ei}:{ri}"
             if key not in selected_round_keys:
                 continue
-            if event_id is None:
-                event_id = _get_or_create_event(conn, ev["name"], ev["scoring_type"])
-
             override_name = request.form.get(f"round_name__{key}", "").strip() or rnd["name"]
             round_number_raw = request.form.get(f"round_number__{key}", "").strip()
             round_number = int(round_number_raw) if round_number_raw.isdigit() else None
-            round_id = _get_or_create_round(conn, event_id, override_name, round_number)
+            staged_rounds.append({
+                "event_name": ev["name"],
+                "scoring_type": ev["scoring_type"],
+                "is_team": importer.guess_is_team_event(ev["name"]),
+                "round_name": override_name,
+                "round_number": round_number,
+                "entries": rnd["entries"],
+            })
 
-            existing_competitor_ids = {
-                r["competitor_id"]
-                for r in conn.execute("SELECT competitor_id FROM entries WHERE round_id = ?", (round_id,))
-            }
-            # Rounds can be merged (e.g. multiple source performances renamed
-            # to the same "Round 1"), so draw_order must be a fresh running
-            # sequence for this destination round, not just the original
-            # per-performance draw number -- otherwise merged rounds would
-            # collide on duplicate draw_order values and interleave oddly.
-            next_draw_order = conn.execute(
-                "SELECT COALESCE(MAX(draw_order), 0) + 1 as n FROM entries WHERE round_id = ?", (round_id,)
-            ).fetchone()["n"]
+    if not staged_rounds:
+        flash("No rounds were selected to import.")
+        return redirect(url_for("import_page"))
 
-            for entry in rnd["entries"]:
+    review_token = uuid.uuid4().hex
+    review_cache_path = os.path.join(IMPORT_CACHE_DIR, f"{review_token}_review.json")
+    with open(review_cache_path, "w") as f:
+        json.dump({"rounds": staged_rounds}, f)
+    os.remove(cache_path)
+
+    return render_template("import_review.html", token=review_token, rounds=staged_rounds)
+
+
+@app.route("/import/finalize", methods=["POST"])
+def import_finalize():
+    """Final step: writes the staged rounds/entries to the database,
+    applying whatever corrections were made on the review screen (edited
+    entry_* fields override the originally-parsed values)."""
+    token = request.form.get("token", "")
+    cache_path = os.path.join(IMPORT_CACHE_DIR, f"{token}_review.json")
+    if not os.path.exists(cache_path):
+        flash("That import review has expired. Please upload the file again.")
+        return redirect(url_for("import_page"))
+
+    with open(cache_path) as f:
+        staged = json.load(f)
+
+    conn = get_conn()
+    competitors_created = 0
+    entries_created = 0
+    gi = 0  # global entry index, matches the numbering used to render import_review.html
+
+    for rnd in staged["rounds"]:
+        event_id = _get_or_create_event(conn, rnd["event_name"], rnd["scoring_type"])
+        round_id = _get_or_create_round(conn, event_id, rnd["round_name"], rnd["round_number"])
+
+        existing_competitor_ids = {
+            r["competitor_id"]
+            for r in conn.execute("SELECT competitor_id FROM entries WHERE round_id = ?", (round_id,))
+        }
+        # Rounds can be merged (e.g. multiple source performances renamed
+        # to the same "Round 1"), so draw_order must be a fresh running
+        # sequence for this destination round, not just the original
+        # per-performance draw number -- otherwise merged rounds would
+        # collide on duplicate draw_order values and interleave oddly.
+        next_draw_order = conn.execute(
+            "SELECT COALESCE(MAX(draw_order), 0) + 1 as n FROM entries WHERE round_id = ?", (round_id,)
+        ).fetchone()["n"]
+
+        for entry in rnd["entries"]:
+            # Corrections made on the review screen win over the originally
+            # parsed values; a field left untouched falls back to what was
+            # parsed, so leaving most rows alone still imports them as-is.
+            name = importer.format_name(request.form.get(f"entry_name__{gi}", entry["name"]))
+            hometown = importer.fix_hometown(request.form.get(f"entry_hometown__{gi}", entry.get("hometown", "")))
+            draw_animal = importer.format_draw_animal(
+                request.form.get(f"entry_draw_animal__{gi}", entry.get("draw_animal", ""))
+            )
+            partner = importer.format_name(request.form.get(f"entry_partner__{gi}", entry.get("partner", "")))
+            gi += 1
+
+            before = conn.execute("SELECT COUNT(*) as n FROM competitors").fetchone()["n"]
+            competitor_id = _get_or_create_competitor(conn, name, hometown, partner, draw_animal)
+            after = conn.execute("SELECT COUNT(*) as n FROM competitors").fetchone()["n"]
+            competitors_created += (after - before)
+
+            if partner:
                 before = conn.execute("SELECT COUNT(*) as n FROM competitors").fetchone()["n"]
-                competitor_id = _get_or_create_competitor(
-                    conn, entry["name"], entry.get("hometown", ""),
-                    entry.get("partner", ""), entry.get("draw_animal", ""),
+                partner_id = _get_or_create_competitor(
+                    conn, partner, entry.get("partner_hometown", ""), name,
                 )
                 after = conn.execute("SELECT COUNT(*) as n FROM competitors").fetchone()["n"]
                 competitors_created += (after - before)
-
-                if entry.get("partner"):
-                    before = conn.execute("SELECT COUNT(*) as n FROM competitors").fetchone()["n"]
-                    partner_id = _get_or_create_competitor(
-                        conn, entry["partner"], entry.get("partner_hometown", ""),
-                        entry["name"],
-                    )
-                    after = conn.execute("SELECT COUNT(*) as n FROM competitors").fetchone()["n"]
-                    competitors_created += (after - before)
-                    # Link header <-> heeler by ID (not just by name text) so
-                    # hometown etc. can be looked up reliably for exports.
-                    conn.execute(
-                        "UPDATE competitors SET partner_id = ? WHERE id = ? AND (partner_id IS NULL OR partner_id != ?)",
-                        (partner_id, competitor_id, partner_id),
-                    )
-                    conn.execute(
-                        "UPDATE competitors SET partner_id = ? WHERE id = ? AND (partner_id IS NULL OR partner_id != ?)",
-                        (competitor_id, partner_id, competitor_id),
-                    )
-
-                if competitor_id in existing_competitor_ids:
-                    continue  # already drawn into this round, don't duplicate
-
+                # Link header <-> heeler by ID (not just by name text) so
+                # hometown etc. can be looked up reliably for exports.
                 conn.execute(
-                    "INSERT INTO entries (round_id, competitor_id, draw_order, draw_number, draw_animal, status) "
-                    "VALUES (?, ?, ?, ?, ?, 'pending')",
-                    (round_id, competitor_id, next_draw_order, entry["draw_number"], entry.get("draw_animal", "")),
+                    "UPDATE competitors SET partner_id = ? WHERE id = ? AND (partner_id IS NULL OR partner_id != ?)",
+                    (partner_id, competitor_id, partner_id),
                 )
-                next_draw_order += 1
-                existing_competitor_ids.add(competitor_id)
-                entries_created += 1
+                conn.execute(
+                    "UPDATE competitors SET partner_id = ? WHERE id = ? AND (partner_id IS NULL OR partner_id != ?)",
+                    (competitor_id, partner_id, competitor_id),
+                )
+
+            if competitor_id in existing_competitor_ids:
+                continue  # already drawn into this round, don't duplicate
+
+            conn.execute(
+                "INSERT INTO entries (round_id, competitor_id, draw_order, draw_number, draw_animal, status) "
+                "VALUES (?, ?, ?, ?, ?, 'pending')",
+                (round_id, competitor_id, next_draw_order, entry["draw_number"], draw_animal),
+            )
+            next_draw_order += 1
+            existing_competitor_ids.add(competitor_id)
+            entries_created += 1
 
     conn.commit()
     conn.close()

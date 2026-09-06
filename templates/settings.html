@@ -92,15 +92,10 @@
 
     <div class="settings-subhead">
       <label>Announcer Screen Colors</label>
-      <p class="settings-hint">The Announcer Screen (see the nav bar) is a separate full-screen dark monitor view,
-      not part of the app's own theme above, so it gets its own small palette to match. Text color stays legible
-      against whatever background is picked, so leave Background dark for a broadcast-monitor look.</p>
-      <div class="theme-color-row">
-        <label>Background <input type="color" name="announcer_color_bg" value="{{ announcer_color_bg }}"></label>
-        <label>Accent <input type="color" name="announcer_color_accent" value="{{ announcer_color_accent }}"></label>
-        <label>Text <input type="color" name="announcer_color_text" value="{{ announcer_color_text }}"></label>
-      </div>
-      <button type="submit" name="reset_announcer_colors" value="1" class="tiny">Reset Colors to Default</button>
+      <p class="settings-hint">The Announcer Screen (see the nav bar) now follows the same Theme Color chosen under
+      Appearance above -- outlines and headers there always match whatever preset is selected, so there's nothing
+      separate to pick here. Its background and body text stay fixed (near-black and white) for maximum legibility
+      on a monitor viewed from across a booth or truck.</p>
     </div>
   </div>
 

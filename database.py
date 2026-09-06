@@ -115,16 +115,6 @@ DEFAULT_SETTINGS = {
     "judge_name_2": "",
     "judge_name_3": "",
     "judge_name_4": "",
-    # The Announcer Screen's own three-color palette -- it's a separate
-    # full-screen dark monitor view (see announcer.html/announcer.css),
-    # not part of the main app's theme, so it gets its own small palette
-    # customizable per-booth rather than inheriting the main app's
-    # colors, which wouldn't suit a screen meant to be read from across
-    # a room. Defaults match the original hardcoded dark brown/gold look
-    # exactly.
-    "announcer_color_bg": "#14100d",
-    "announcer_color_accent": "#d9a441",
-    "announcer_color_text": "#f2e9dd",
     # Off by default -- video review isn't available at every rodeo, so
     # the VR code in the quick-entry score field only works once this is
     # explicitly turned on (see scoring.parse_score_input).
@@ -208,6 +198,15 @@ def init_db():
     # :root now -- so these are dead settings; delete them if present
     # rather than leaving orphaned rows around.
     conn.execute("DELETE FROM settings WHERE key IN ('theme_color_primary', 'theme_color_accent', 'theme_color_tint')")
+
+    # Same cleanup for the Announcer Screen's own three-color palette --
+    # it now follows the main app's Theme Color preset for its accent
+    # (outlines/headers) and has a fixed background/text (near-black and
+    # white, for legibility from across a room), so these three are dead
+    # settings too.
+    conn.execute(
+        "DELETE FROM settings WHERE key IN ('announcer_color_bg', 'announcer_color_accent', 'announcer_color_text')"
+    )
 
     comp_cols = [r["name"] for r in conn.execute("PRAGMA table_info(competitors)")]
     if "partner_id" not in comp_cols:

@@ -2543,9 +2543,6 @@ def announcer_screen():
     return render_template(
         "announcer.html",
         data=_announcer_context(),
-        announcer_color_bg=get_setting("announcer_color_bg", DEFAULT_SETTINGS["announcer_color_bg"]),
-        announcer_color_accent=get_setting("announcer_color_accent", DEFAULT_SETTINGS["announcer_color_accent"]),
-        announcer_color_text=get_setting("announcer_color_text", DEFAULT_SETTINGS["announcer_color_text"]),
     )
 
 
@@ -2876,17 +2873,6 @@ def settings():
         if color_preset in THEME_PRESETS:
             set_setting("color_preset", color_preset)
 
-        if request.form.get("reset_announcer_colors"):
-            set_setting("announcer_color_bg", DEFAULT_SETTINGS["announcer_color_bg"])
-            set_setting("announcer_color_accent", DEFAULT_SETTINGS["announcer_color_accent"])
-            set_setting("announcer_color_text", DEFAULT_SETTINGS["announcer_color_text"])
-        else:
-            hex_color = re.compile(r"^#[0-9a-fA-F]{6}$")
-            for key in ("announcer_color_bg", "announcer_color_accent", "announcer_color_text"):
-                value = request.form.get(key, "").strip()
-                if hex_color.match(value):
-                    set_setting(key, value)
-
         xml_export.export_all()
         return redirect(url_for("settings"))
     return render_template(
@@ -2896,9 +2882,6 @@ def settings():
         names_field_limit=get_setting("names_field_limit", "10"),
         judge_count=get_setting("judge_count", "2"),
         judge_names_raw={seat: get_setting(f"judge_name_{seat}", "") for seat in range(1, 5)},
-        announcer_color_bg=get_setting("announcer_color_bg", DEFAULT_SETTINGS["announcer_color_bg"]),
-        announcer_color_accent=get_setting("announcer_color_accent", DEFAULT_SETTINGS["announcer_color_accent"]),
-        announcer_color_text=get_setting("announcer_color_text", DEFAULT_SETTINGS["announcer_color_text"]),
         judge_url=_judge_url(),
         judge_qr_svg=_judge_qr_svg(),
         theme_presets=THEME_PRESETS,

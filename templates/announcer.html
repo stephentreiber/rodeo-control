@@ -5,13 +5,17 @@
 <title>Announcer Screen — {{ rodeo_name }}</title>
 <link rel="stylesheet" href="{{ url_for('static', filename='announcer.css') }}">
 <style>
-  /* Per-installation override from Settings -- comes after the
-     stylesheet link so these win the cascade over the defaults baked
-     into announcer.css's :root. */
+  /* --announcer-accent follows the SAME theme preset picked under
+     Settings > Appearance for the rest of the app (theme_accent is
+     already injected into every template's context -- see
+     inject_globals in app.py), so outlines and headers here always
+     match the main app's theme. Background and body text are NOT
+     overridden here at all anymore -- they're fixed directly in
+     announcer.css (near-black / white) for maximum legibility on a
+     monitor viewed from across a room, so there's nothing left to
+     coordinate by hand for those two. */
   :root {
-    --announcer-bg: {{ announcer_color_bg }};
-    --announcer-accent: {{ announcer_color_accent }};
-    --announcer-text: {{ announcer_color_text }};
+    --announcer-accent: {{ theme_accent }};
   }
 </style>
 </head>

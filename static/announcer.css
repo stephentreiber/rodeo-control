@@ -150,7 +150,8 @@ html, body {
 }
 .announcer-panel h2 {
   margin: 0 0 10px;
-  font-size: 1.05em;
+  font-size: 1.6em;
+  font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--announcer-accent);

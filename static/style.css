@@ -734,7 +734,12 @@ h1 .tip { font-size: 0.5em; }
   display: inline-block;
   text-align: center;
 }
-.judge-qr-svg { display: inline-block; }
+.judge-qr-svg {
+  display: inline-block;
+  background: #ffffff;
+  padding: 10px;
+  border-radius: 4px;
+}
 .judge-qr-svg svg { display: block; margin: 0 auto; }
 .judge-qr-block code { font-size: 1.05em; }
 

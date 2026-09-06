@@ -2999,6 +2999,22 @@ def _judge_qr_svg():
     svg = re.sub(r"^<\?xml[^>]*\?>\s*", "", svg)
     svg = re.sub(r'width="[\d.]+mm"', 'width="220"', svg, count=1)
     svg = re.sub(r'height="[\d.]+mm"', 'height="220"', svg, count=1)
+    # The generated path has no fill color and no background of its own
+    # -- it's just a bare black shape on whatever's behind it. That's a
+    # problem the moment this sits on anything but a plain white page
+    # (e.g. the app's own dark theme, or a future color-preset choice
+    # under Settings): a QR code needs solid black modules on a solid
+    # light background to scan reliably, so bake a white background
+    # rect (and an explicit black fill on the path) directly into the
+    # SVG itself, rather than relying on whatever CSS happens to be
+    # sitting around it -- that way it's still readable even if the SVG
+    # is ever saved out or embedded somewhere else on its own.
+    svg = re.sub(
+        r"(<svg[^>]*>)",
+        r'\1<rect width="100%" height="100%" fill="#ffffff"/>',
+        svg, count=1,
+    )
+    svg = svg.replace("<path ", '<path fill="#000000" ', 1)
     return svg
 
 

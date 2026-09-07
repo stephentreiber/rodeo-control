@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Rodeo Control</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Oswald:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+<style>
+  /* Same per-installation theme override as base.html (see
+     THEME_PRESETS in app.py) -- this page renders standalone (no
+     topbar/nav, since there's no active rodeo context to show one for
+     yet), but should still match whatever theme is picked. */
+  :root {
+    --color-primary: {{ theme_primary }};
+    --color-accent: {{ theme_accent }};
+    --color-tint: {{ theme_tint }};
+  }
+  .start-shell {
+    max-width: 640px;
+    margin: 40px auto;
+    padding: 0 20px 60px;
+  }
+  .start-title {
+    text-align: center;
+    margin-bottom: 6px;
+  }
+  .start-subtitle {
+    text-align: center;
+    color: var(--color-text-muted);
+    margin: 0 0 32px;
+  }
+  .start-section { margin-bottom: 28px; }
+  .start-section h2 { margin-top: 0; }
+  .saved-rodeo-list { list-style: none; margin: 0; padding: 0; }
+  .saved-rodeo-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 14px;
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    margin-bottom: 8px;
+    background: var(--color-surface-alt);
+  }
+  .saved-rodeo-info { display: flex; flex-direction: column; }
+  .saved-rodeo-name { font-weight: 600; }
+  .saved-rodeo-date { font-size: 0.85em; color: var(--color-text-muted); }
+</style>
+</head>
+<body>
+<div class="start-shell">
+  <h1 class="start-title">Rodeo Control</h1>
+  <p class="start-subtitle">Starting up -- is this a new rodeo, or picking back up on one already in progress?</p>
+
+  {% with messages = get_flashed_messages() %}
+    {% if messages %}
+      {% for m in messages %}<div class="flash">{{ m }}</div>{% endfor %}
+    {% endif %}
+  {% endwith %}
+
+  <div class="start-section card-form">
+    <h2>Start a New Rodeo</h2>
+    <p class="settings-hint">Whatever's currently loaded (if anything real) is automatically saved first, so
+    nothing is lost by starting fresh.</p>
+    <form method="post" action="{{ url_for('start_new_rodeo') }}">
+      <label>Rodeo Name <input name="rodeo_name" placeholder="e.g. Calgary Stampede 2026" required autofocus></label>
+      <button type="submit" class="button-primary">Start New Rodeo</button>
+    </form>
+  </div>
+
+  <div class="start-section card-form">
+    <h2>Continue a Rodeo</h2>
+    {% if saved_rodeos %}
+    <ul class="saved-rodeo-list">
+      {% for f in saved_rodeos %}
+      <li class="saved-rodeo-item">
+        <div class="saved-rodeo-info">
+          <span class="saved-rodeo-name">{{ f.label }}</span>
+          <span class="saved-rodeo-date">Saved {{ f.modified }}</span>
+        </div>
+        <form method="post" action="{{ url_for('start_continue_rodeo') }}">
+          <input type="hidden" name="filename" value="{{ f.filename }}">
+          <button type="submit">Continue</button>
+        </form>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="settings-hint">No saved rodeos yet -- once you start a new one, whatever came before it (or that
+    one itself, next time) shows up here automatically.</p>
+    {% endif %}
+  </div>
+</div>
+</body>
+</html>

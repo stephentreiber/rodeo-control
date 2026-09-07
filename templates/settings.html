@@ -129,6 +129,15 @@
 <div class="settings-section">
   <h2>Data &amp; Backup</h2>
 
+  <div class="settings-subhead">
+    <label>Switch Rodeo</label>
+    <p class="settings-hint">Back to the New Rodeo / Continue a Rodeo screen shown on startup. Whatever's
+    currently loaded is automatically saved first, so nothing is lost by switching.</p>
+    <form method="post" action="{{ url_for('switch_rodeo') }}" class="inline-form">
+      <button type="submit">Switch Rodeo</button>
+    </form>
+  </div>
+
   <p class="settings-hint">The three broadcast graphics files normally stay up to date on their own as things
   change. Use this if vMix / Ross XPression ever looks out of sync and you want to force a fresh write right now.</p>
   <form method="post" action="{{ url_for('export_now') }}">

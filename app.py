@@ -24,6 +24,35 @@ app.jinja_env.globals["is_timed"] = scoring.is_timed
 app.jinja_env.globals["scoring_short_label"] = scoring.short_label
 app.jinja_env.globals["SCORING_TYPES"] = scoring.SCORING_TYPES
 
+# ---------- Startup: new rodeo vs. continue a saved one ----------
+# In-memory only, deliberately not a persisted setting -- this is meant
+# to re-prompt every time the app process actually starts (run.bat /
+# python app.py), matching "on app startup" literally, without needing
+# any settings-table bookkeeping. A Flask dev server restart (the only
+# time this process re-runs from scratch) is exactly when re-asking
+# makes sense; nothing else should ever flip it back to False except
+# the explicit "Switch Rodeo" action in Settings.
+_startup_choice_made = False
+
+SAVED_RODEOS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "saved_rodeos")
+os.makedirs(SAVED_RODEOS_DIR, exist_ok=True)
+
+# Requests to these prefixes are never redirected to the startup prompt,
+# even before a choice has been made -- judges' phones and the
+# Announcer Screen are separate devices with no way to answer "new or
+# continue", and blocking them would break live scoring the moment
+# someone opens the judge link before the scorekeeper has picked.
+_STARTUP_EXEMPT_PREFIXES = ("/judge", "/announcer", "/static", "/start")
+
+
+@app.before_request
+def _require_startup_choice():
+    if _startup_choice_made:
+        return None
+    if request.path.startswith(_STARTUP_EXEMPT_PREFIXES):
+        return None
+    return redirect(url_for("start_page"))
+
 STANDARD_EVENTS = [
     "Bareback Riding", "Saddle Bronc", "Bull Riding", "Barrel Racing",
     "Tie-Down Roping", "Team Roping", "Steer Wrestling", "Breakaway Roping",
@@ -3009,6 +3038,148 @@ def settings():
 def export_now():
     xml_export.export_all()
     return redirect(request.referrer or url_for("index"))
+
+
+# ---------- New rodeo vs. continue a saved one ----------
+def _saved_rodeo_files():
+    """Every .db file in SAVED_RODEOS_DIR, newest first, with a
+    human-readable label derived from the filename (which already
+    encodes the rodeo name + timestamp -- see _backup_filename) and the
+    file's actual last-modified time for a second point of reference."""
+    files = []
+    for fname in os.listdir(SAVED_RODEOS_DIR):
+        if not fname.lower().endswith(".db"):
+            continue
+        full_path = os.path.join(SAVED_RODEOS_DIR, fname)
+        label = re.sub(r"_backup_[\d-]+_\d+$", "", fname[:-3]).replace("_", " ").strip() or fname
+        files.append({
+            "filename": fname,
+            "label": label,
+            "modified": datetime.datetime.fromtimestamp(os.path.getmtime(full_path)).strftime("%b %d, %Y %I:%M %p"),
+            "mtime": os.path.getmtime(full_path),
+        })
+    files.sort(key=lambda f: f["mtime"], reverse=True)
+    return files
+
+
+def _archive_current_rodeo_if_any():
+    """Saves a copy of whatever's currently live into SAVED_RODEOS_DIR
+    before it gets wiped or replaced, named from its OWN rodeo name (see
+    _backup_filename) -- so starting a new rodeo, or switching to a
+    different saved one, never silently loses whatever was live before,
+    even if the scorekeeper never thought to export it manually. Skips
+    archiving an install that's never actually been used yet (no events
+    and no competitors at all), so a brand-new install doesn't leave a
+    pointless empty placeholder cluttering the "Continue a Rodeo" list."""
+    conn = get_conn()
+    has_events = conn.execute("SELECT 1 FROM events LIMIT 1").fetchone() is not None
+    has_competitors = conn.execute("SELECT 1 FROM competitors LIMIT 1").fetchone() is not None
+    conn.close()
+    if not has_events and not has_competitors:
+        return None
+    if not os.path.exists(database.DB_PATH):
+        return None
+
+    dest_path = os.path.join(SAVED_RODEOS_DIR, _backup_filename())
+    try:
+        src = sqlite3.connect(database.DB_PATH)
+        dst = sqlite3.connect(dest_path)
+        src.backup(dst)
+        src.close()
+        dst.close()
+    except Exception:
+        return None
+    return dest_path
+
+
+@app.route("/start")
+def start_page():
+    return render_template("start_rodeo.html", saved_rodeos=_saved_rodeo_files())
+
+
+@app.route("/start/new", methods=["POST"])
+def start_new_rodeo():
+    global _startup_choice_made
+    new_name = request.form.get("rodeo_name", "").strip()
+    if not new_name:
+        flash("Enter a name for the new rodeo.")
+        return redirect(url_for("start_page"))
+
+    archived_path = _archive_current_rodeo_if_any()
+
+    # A clean slate is a genuinely fresh database, not just cleared
+    # tables -- simplest and most reliable way to guarantee nothing
+    # from the previous rodeo (including any judge seat assignments,
+    # Who's Up state, or settings tweaks that don't make sense to carry
+    # forward) lingers into the new one. init_db() below recreates the
+    # schema from scratch immediately after.
+    for suffix in ("", "-journal", "-wal", "-shm"):
+        path = database.DB_PATH + suffix
+        if os.path.exists(path):
+            os.remove(path)
+    init_db()
+    set_setting("rodeo_name", new_name)
+    xml_export.export_all()
+
+    _startup_choice_made = True
+    if archived_path:
+        flash(f"Started '{new_name}'. The previous rodeo was saved as {os.path.basename(archived_path)}.")
+    else:
+        flash(f"Started '{new_name}'.")
+    return redirect(url_for("index"))
+
+
+@app.route("/start/continue", methods=["POST"])
+def start_continue_rodeo():
+    global _startup_choice_made
+    filename = os.path.basename(request.form.get("filename", ""))
+    chosen_path = os.path.join(SAVED_RODEOS_DIR, filename)
+    # os.path.basename above already strips any path components, but
+    # double-check the result is still genuinely inside SAVED_RODEOS_DIR
+    # and really is one of the files just offered, rather than trusting
+    # a filename that arrived via a form field at all.
+    if not filename or not os.path.isfile(chosen_path):
+        flash("That saved rodeo file couldn't be found. It may have been moved or deleted.")
+        return redirect(url_for("start_page"))
+
+    try:
+        check_conn = sqlite3.connect(chosen_path)
+        tables = {r[0] for r in check_conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        check_conn.close()
+    except sqlite3.DatabaseError:
+        flash("That file doesn't look like a valid Rodeo Control database.")
+        return redirect(url_for("start_page"))
+    if not BACKUP_REQUIRED_TABLES.issubset(tables):
+        flash("That file doesn't look like a valid Rodeo Control database (missing expected tables).")
+        return redirect(url_for("start_page"))
+
+    _archive_current_rodeo_if_any()
+
+    try:
+        shutil.copy2(chosen_path, database.DB_PATH)
+    except OSError as e:
+        flash(f"Could not load that rodeo -- {e}")
+        return redirect(url_for("start_page"))
+
+    # The saved file might be from an older build -- run every pending
+    # migration against it now, same as a normal startup would.
+    init_db()
+    xml_export.export_all()
+
+    _startup_choice_made = True
+    flash(f"Continuing '{get_setting('rodeo_name', 'this rodeo')}'.")
+    return redirect(url_for("index"))
+
+
+@app.route("/start/switch", methods=["POST"])
+def switch_rodeo():
+    """Lets the scorekeeper come back to the New/Continue choice at any
+    point mid-session (e.g. Settings > Switch Rodeo), not just on the
+    very first request of the process -- reuses the exact same /start
+    flow either way."""
+    global _startup_choice_made
+    _startup_choice_made = False
+    return redirect(url_for("start_page"))
 
 
 # ---------- Full backup / restore ----------

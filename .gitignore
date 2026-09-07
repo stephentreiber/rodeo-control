@@ -17,6 +17,12 @@ import_cache/*
 # version or ship.
 backups/
 
+# Saved rodeo databases (see app.py's /start routes) -- these are the
+# user's actual event data, auto-archived whenever a new rodeo starts
+# or a different saved one is loaded. Same reasoning as rodeo_data.db
+# itself: real data, not something to version.
+saved_rodeos/
+
 # Python
 __pycache__/
 *.pyc

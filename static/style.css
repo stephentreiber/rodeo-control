@@ -222,6 +222,13 @@ table.list button.tiny { padding: 2px 6px; }
 .review-import-table td { padding: 4px 8px; }
 .review-import-table input[type="text"] { width: 100%; padding: 4px 6px; box-sizing: border-box; }
 .review-import-table td:first-child { text-align: center; width: 40px; }
+.review-import-remove-cell { text-align: center; width: 60px; }
+.review-import-remove-checkbox { width: auto; margin: 0; cursor: pointer; }
+/* A row checked for removal: dimmed and struck through so it reads
+   clearly as "won't be imported" without needing to actually remove it
+   from the page (keeping it visible/reversible until the final submit). */
+.review-import-row-removed { opacity: 0.45; text-decoration: line-through; }
+.review-import-row-removed input[type="text"] { text-decoration: line-through; }
 .badge { background: var(--color-danger); color: var(--color-text); padding: 3px 8px; border-radius: 3px; font-size: 0.85em; }
 .event-tabs { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 2px solid var(--color-primary); margin-bottom: 16px; }
 .event-tab { padding: 8px 16px; background: var(--color-tint); color: var(--color-primary); text-decoration: none; border-radius: 6px 6px 0 0; font-weight: 600; font-size: 0.9em; }

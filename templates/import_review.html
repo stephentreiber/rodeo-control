@@ -24,11 +24,12 @@
       <th>Hometown</th>
       <th>{{ 'Heeler' if rnd.is_team else 'Draw Animal' }}</th>
       {% if rnd.is_team %}<th>Header</th>{% endif %}
+      <th>Remove</th>
     </tr>
     {% for entry in rnd.entries %}
     {% set this_gi = gi.n %}
     {% set gi.n = gi.n + 1 %}
-    <tr>
+    <tr class="review-import-row">
       <td>{{ entry.draw_number if entry.draw_number is not none else '(RR)' }}</td>
       <td><input type="text" name="entry_name__{{ this_gi }}" value="{{ entry.name }}"></td>
       <td><input type="text" name="entry_hometown__{{ this_gi }}" value="{{ entry.hometown }}"></td>
@@ -38,6 +39,11 @@
       {% else %}
       <input type="hidden" name="entry_partner__{{ this_gi }}" value="{{ entry.partner }}">
       {% endif %}
+      <td class="review-import-remove-cell">
+        <label class="review-import-remove-label">
+          <input type="checkbox" name="entry_delete__{{ this_gi }}" class="review-import-remove-checkbox">
+        </label>
+      </td>
     </tr>
     {% endfor %}
   </table>
@@ -47,4 +53,22 @@
 </form>
 
 <p><a href="{{ url_for('import_page') }}">← Start over</a></p>
+
+<script>
+// Checking "Remove" on a row visually marks it as excluded (dimmed,
+// struck through, its text inputs disabled) so it's obvious at a
+// glance which rows won't be imported -- the checkbox itself is what
+// import_finalize actually reads, this is just a visual confirmation.
+// Draw numbers are renumbered server-side to close the gap left by
+// whatever gets removed (see import_finalize in app.py), not here.
+document.querySelectorAll('.review-import-remove-checkbox').forEach(function (cb) {
+  cb.addEventListener('change', function () {
+    const row = cb.closest('tr');
+    row.classList.toggle('review-import-row-removed', cb.checked);
+    row.querySelectorAll('input[type="text"]').forEach(function (input) {
+      input.disabled = cb.checked;
+    });
+  });
+});
+</script>
 {% endblock %}

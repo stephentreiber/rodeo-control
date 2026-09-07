@@ -2878,10 +2878,16 @@ def import_finalize():
             "SELECT COALESCE(MAX(draw_order), 0) + 1 as n FROM entries WHERE round_id = ?", (round_id,)
         ).fetchone()["n"]
 
+        # First pass: resolve each row's corrected field values and
+        # whether it was checked for removal on the review screen,
+        # without touching the database yet. Draw numbers get
+        # renumbered below based on the surviving (non-removed) rows
+        # only, so removing one closes the gap instead of leaving it --
+        # e.g. removing draw #5 shifts #6 down to #5, #7 to #6, and so
+        # on, rather than importing 1,2,3,4,6,7,....
+        resolved_entries = []
         for entry in rnd["entries"]:
-            # Corrections made on the review screen win over the originally
-            # parsed values; a field left untouched falls back to what was
-            # parsed, so leaving most rows alone still imports them as-is.
+            removed = bool(request.form.get(f"entry_delete__{gi}"))
             name = importer.format_name(request.form.get(f"entry_name__{gi}", entry["name"]))
             hometown = importer.fix_hometown(request.form.get(f"entry_hometown__{gi}", entry.get("hometown", "")))
             draw_animal = importer.format_draw_animal(
@@ -2889,6 +2895,35 @@ def import_finalize():
             )
             partner = importer.format_name(request.form.get(f"entry_partner__{gi}", entry.get("partner", "")))
             gi += 1
+            if removed:
+                continue
+            resolved_entries.append({
+                "name": name,
+                "hometown": hometown,
+                "draw_animal": draw_animal,
+                "partner": partner,
+                "partner_hometown": entry.get("partner_hometown", ""),
+                # Whether this row was genuinely part of the numbered
+                # draw to begin with -- RR/reserve rows (no draw number
+                # in the source file) stay blank no matter how many
+                # numbered rows around them get removed; they were never
+                # part of that sequence.
+                "had_draw_number": entry["draw_number"] is not None,
+            })
+
+        next_number = 1
+        for e in resolved_entries:
+            if e["had_draw_number"]:
+                e["draw_number"] = next_number
+                next_number += 1
+            else:
+                e["draw_number"] = None
+
+        for e in resolved_entries:
+            name = e["name"]
+            hometown = e["hometown"]
+            draw_animal = e["draw_animal"]
+            partner = e["partner"]
 
             before = conn.execute("SELECT COUNT(*) as n FROM competitors").fetchone()["n"]
             competitor_id = _get_or_create_competitor(conn, name, hometown, partner, draw_animal)
@@ -2898,7 +2933,7 @@ def import_finalize():
             if partner:
                 before = conn.execute("SELECT COUNT(*) as n FROM competitors").fetchone()["n"]
                 partner_id = _get_or_create_competitor(
-                    conn, partner, entry.get("partner_hometown", ""), name,
+                    conn, partner, e["partner_hometown"], name,
                 )
                 after = conn.execute("SELECT COUNT(*) as n FROM competitors").fetchone()["n"]
                 competitors_created += (after - before)
@@ -2919,7 +2954,7 @@ def import_finalize():
             conn.execute(
                 "INSERT INTO entries (round_id, competitor_id, draw_order, draw_number, draw_animal, status) "
                 "VALUES (?, ?, ?, ?, ?, 'pending')",
-                (round_id, competitor_id, next_draw_order, entry["draw_number"], draw_animal),
+                (round_id, competitor_id, next_draw_order, e["draw_number"], draw_animal),
             )
             next_draw_order += 1
             existing_competitor_ids.add(competitor_id)

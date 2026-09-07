@@ -102,12 +102,35 @@ function renderCurrent(data) {
   }
 
   const idBlock = el('div', 'announcer-current-id');
-  idBlock.appendChild(el('p', 'announcer-current-name', current.name));
 
-  const subParts = [current.hometown];
-  if (current.partner) subParts.push('Partner: ' + current.partner);
-  if (current.draw_animal) subParts.push('Draw: ' + current.draw_animal);
-  idBlock.appendChild(el('p', 'announcer-current-sub', subParts.filter(Boolean).join('   |   ')));
+  if (current.partner) {
+    // Team roping: header and heeler shown with equal visual weight,
+    // side by side -- previously the heeler was just a small "Partner:
+    // Name" afterthought with no hometown at all, which both buried
+    // them below the header and left out real information the
+    // announcer needs just as much for either roper.
+    const row = el('div', 'announcer-team-row');
+
+    const headerBlock = el('div', 'announcer-team-block');
+    headerBlock.appendChild(el('div', 'announcer-team-role', 'Header'));
+    headerBlock.appendChild(el('div', 'announcer-team-name', current.name));
+    if (current.hometown) headerBlock.appendChild(el('div', 'announcer-team-hometown', current.hometown));
+    row.appendChild(headerBlock);
+
+    const heelerBlock = el('div', 'announcer-team-block');
+    heelerBlock.appendChild(el('div', 'announcer-team-role', 'Heeler'));
+    heelerBlock.appendChild(el('div', 'announcer-team-name', current.partner));
+    if (current.partner_hometown) heelerBlock.appendChild(el('div', 'announcer-team-hometown', current.partner_hometown));
+    row.appendChild(heelerBlock);
+
+    idBlock.appendChild(row);
+  } else {
+    idBlock.appendChild(el('p', 'announcer-current-name', current.name));
+
+    const subParts = [current.hometown];
+    if (current.draw_animal) subParts.push('Draw: ' + current.draw_animal);
+    idBlock.appendChild(el('p', 'announcer-current-sub', subParts.filter(Boolean).join('   |   ')));
+  }
 
   if (current.event_name || current.round_name) {
     const contextText = [current.event_name, current.round_name].filter(Boolean).join(' — ');

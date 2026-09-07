@@ -4,10 +4,24 @@
 
 {% if current and current.name %}
 <div class="whos-up-card">
+  {% if current.partner %}
+  <div class="whos-up-team-row">
+    <div class="whos-up-team-block">
+      <div class="whos-up-team-role">Header</div>
+      <h2>{{ current.name }}</h2>
+      {% if current.hometown %}<p>{{ current.hometown }}</p>{% endif %}
+    </div>
+    <div class="whos-up-team-block">
+      <div class="whos-up-team-role">Heeler</div>
+      <h2>{{ current.partner }}</h2>
+      {% if current.partner_hometown %}<p>{{ current.partner_hometown }}</p>{% endif %}
+    </div>
+  </div>
+  {% else %}
   <h2>{{ current.name }}</h2>
   <p>{{ current.hometown }}</p>
+  {% endif %}
   {% if current.sponsor %}<p>Sponsor: {{ current.sponsor }}</p>{% endif %}
-  {% if current.partner %}<p>Partner: {{ current.partner }}</p>{% endif %}
   {% if current.draw_animal %}<p>Draw: {{ current.draw_animal }}</p>{% endif %}
   {% if current.event_name or current.round_name %}
   <p>{{ current.event_name }}{% if current.event_name and current.round_name %} — {% endif %}{{ current.round_name }}</p>

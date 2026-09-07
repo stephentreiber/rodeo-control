@@ -86,6 +86,24 @@ html, body {
   margin: 0 0 4px;
 }
 .announcer-current-sub { font-size: 1.2em; color: var(--announcer-text-muted); margin: 0; }
+/* Team roping: header and heeler shown side by side with equal size --
+   deliberately the same visual weight as each other, not a big
+   header name with the heeler squeezed into a small aside. */
+.announcer-team-row { display: flex; gap: 24px; flex-wrap: wrap; }
+.announcer-team-block { flex: 1 1 220px; }
+.announcer-team-role {
+  font-size: 0.8em;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--announcer-text-muted);
+  margin-bottom: 2px;
+}
+.announcer-team-name {
+  font-size: 1.8em;
+  font-weight: 800;
+  line-height: 1.1;
+}
+.announcer-team-hometown { font-size: 1.05em; color: var(--announcer-text-muted); margin-top: 2px; }
 .announcer-current-context { font-size: 1.05em; color: var(--announcer-text-muted); margin: 6px 0 0; }
 .announcer-current-note { font-size: 1em; color: var(--announcer-text-muted); margin: 6px 0 0; }
 

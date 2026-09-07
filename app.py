@@ -1624,7 +1624,8 @@ def whos_up_page():
     row = conn.execute(
         """
         SELECT c.name as c_name, c.hometown as c_hometown, c.sponsor as c_sponsor,
-               c.partner as c_partner, c.notes as c_notes,
+               COALESCE(pc.name, c.partner) as c_partner, pc.hometown as c_partner_hometown,
+               c.notes as c_notes,
                COALESCE(e.draw_animal, '') as e_draw_animal,
                ev.name as event_name, r.name as round_name,
                w.guest_id,
@@ -1633,6 +1634,7 @@ def whos_up_page():
         FROM whos_up w
         LEFT JOIN entries e ON w.entry_id = e.id
         LEFT JOIN competitors c ON e.competitor_id = c.id
+        LEFT JOIN competitors pc ON c.partner_id = pc.id
         LEFT JOIN rounds r ON e.round_id = r.id
         LEFT JOIN events ev ON r.event_id = ev.id
         LEFT JOIN guests g ON w.guest_id = g.id
@@ -1647,13 +1649,14 @@ def whos_up_page():
         # current contestant -- see xml_export.export_whos_up() for why.
         current = {
             "name": row["g_name"], "hometown": row["g_hometown"], "sponsor": row["g_sponsor"],
-            "partner": "", "draw_animal": "", "notes": row["g_notes"],
+            "partner": "", "partner_hometown": "", "draw_animal": "", "notes": row["g_notes"],
             "event_name": "", "round_name": "",
         }
     elif row and row["c_name"]:
         current = {
             "name": row["c_name"], "hometown": row["c_hometown"], "sponsor": row["c_sponsor"],
-            "partner": row["c_partner"], "draw_animal": row["e_draw_animal"], "notes": row["c_notes"],
+            "partner": row["c_partner"], "partner_hometown": row["c_partner_hometown"] or "",
+            "draw_animal": row["e_draw_animal"], "notes": row["c_notes"],
             "event_name": row["event_name"], "round_name": row["round_name"],
         }
 
@@ -2407,7 +2410,8 @@ def _announcer_current_contestant(conn):
     row = conn.execute(
         """
         SELECT c.name as c_name, c.hometown as c_hometown, c.sponsor as c_sponsor,
-               c.partner as c_partner, c.notes as c_notes,
+               COALESCE(pc.name, c.partner) as c_partner, pc.hometown as c_partner_hometown,
+               c.notes as c_notes,
                COALESCE(e.draw_animal, '') as e_draw_animal,
                ev.id as event_id, ev.name as event_name, ev.scoring_type,
                e.status as entry_status, e.competitor_id,
@@ -2418,6 +2422,7 @@ def _announcer_current_contestant(conn):
         FROM whos_up w
         LEFT JOIN entries e ON w.entry_id = e.id
         LEFT JOIN competitors c ON e.competitor_id = c.id
+        LEFT JOIN competitors pc ON c.partner_id = pc.id
         LEFT JOIN rounds r ON e.round_id = r.id
         LEFT JOIN events ev ON r.event_id = ev.id
         LEFT JOIN guests g ON w.guest_id = g.id
@@ -2429,13 +2434,14 @@ def _announcer_current_contestant(conn):
     if row and row["guest_id"]:
         current = {
             "name": row["g_name"], "hometown": row["g_hometown"], "sponsor": row["g_sponsor"],
-            "partner": "", "draw_animal": "", "notes": row["g_notes"],
+            "partner": "", "partner_hometown": "", "draw_animal": "", "notes": row["g_notes"],
             "event_name": "", "round_name": "",
         }
     elif row and row["c_name"]:
         current = {
             "name": row["c_name"], "hometown": row["c_hometown"], "sponsor": row["c_sponsor"],
-            "partner": row["c_partner"], "draw_animal": row["e_draw_animal"], "notes": row["c_notes"],
+            "partner": row["c_partner"], "partner_hometown": row["c_partner_hometown"] or "",
+            "draw_animal": row["e_draw_animal"], "notes": row["c_notes"],
             "event_name": row["event_name"], "round_name": row["round_name"],
         }
 

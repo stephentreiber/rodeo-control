@@ -330,6 +330,19 @@ tr.round-row input, tr.round-row select { cursor: default; }
 .edit-field:disabled:hover { border-color: transparent; }
 .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 30px; }
 .whos-up-card { background: var(--color-warning-bg); padding: 20px; border-radius: var(--radius-md); border: 2px solid var(--color-danger); max-width: 400px; }
+/* Team roping: header and heeler shown side by side with equal
+   weight, rather than one big name and the other squeezed into a
+   small "Partner:" aside with no hometown at all. */
+.whos-up-team-row { display: flex; gap: 24px; flex-wrap: wrap; }
+.whos-up-team-block { flex: 1 1 160px; }
+.whos-up-team-block h2 { margin: 0; }
+.whos-up-team-role {
+  font-size: 0.8em;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-muted);
+  margin-bottom: 2px;
+}
 .flash { background: var(--color-danger-bg); border: 1px solid var(--color-danger-border); padding: 10px; border-radius: var(--radius-sm); margin-bottom: 16px; }
 
 /* Site-wide warning when the XML export folder can't be written to

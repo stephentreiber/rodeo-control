@@ -236,7 +236,7 @@
     {% if other_rounds %}
     <div class="copy-round-box">
       <label>Copy from another round
-        <select name="copy_source" onchange="var u = new URL(location.href); u.searchParams.set('copy_source', this.value); location.href = u.toString();">
+        <select name="copy_source" id="copy-round-select">
           <option value="">Select a round...</option>
           {% for r in other_rounds %}
           <option value="{{ r.id }}" {{ 'selected' if copy_source_id == r.id|string }}>{{ r.name }}</option>
@@ -248,8 +248,8 @@
         {% if copy_source_entries %}
         <form method="post" action="{{ url_for('copy_competitors_to_round', rid=current_round.id) }}" class="copy-round-checklist">
           <div class="copy-round-actions">
-            <button type="button" class="tiny" onclick="document.querySelectorAll('.copy-round-checklist input[type=checkbox]').forEach(cb => cb.checked = true)">Select All</button>
-            <button type="button" class="tiny" onclick="document.querySelectorAll('.copy-round-checklist input[type=checkbox]').forEach(cb => cb.checked = false)">Select None</button>
+            <button type="button" class="tiny copy-round-select-all">Select All</button>
+            <button type="button" class="tiny copy-round-select-none">Select None</button>
           </div>
           <div class="copy-round-list">
             {% for c in copy_source_entries %}
@@ -289,6 +289,40 @@
 </div>
 
 <script>
+// ---------- Copy competitors from another round ----------
+// The select reloads the page with ?copy_source=<round id> added so
+// the server can render the checklist for that round (see
+// event_detail in app.py) -- built via the URL API rather than string
+// concatenation with a literal "&", since that previously ran into an
+// HTML entity-decoding gotcha ("&copy_source" getting silently read as
+// the legacy (c) entity plus "_source"). Kept here in the main script
+// block rather than as an inline onchange attribute, matching how
+// every other interactive element on this page is wired up.
+(function () {
+  const copySelect = document.getElementById('copy-round-select');
+  if (copySelect) {
+    copySelect.addEventListener('change', function () {
+      const u = new URL(location.href);
+      if (this.value) {
+        u.searchParams.set('copy_source', this.value);
+      } else {
+        u.searchParams.delete('copy_source');
+      }
+      location.href = u.toString();
+    });
+  }
+  document.querySelectorAll('.copy-round-select-all').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      document.querySelectorAll('.copy-round-checklist input[type="checkbox"]').forEach(function (cb) { cb.checked = true; });
+    });
+  });
+  document.querySelectorAll('.copy-round-select-none').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      document.querySelectorAll('.copy-round-checklist input[type="checkbox"]').forEach(function (cb) { cb.checked = false; });
+    });
+  });
+})();
+
 // ---------- Current Contestant panel ----------
 // The panel is deliberately independent of whichever round/event this
 // page happens to be showing -- these all describe whoever is

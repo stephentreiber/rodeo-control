@@ -23,6 +23,11 @@ backups/
 # itself: real data, not something to version.
 saved_rodeos/
 
+# Built release zips (see scripts/package_release.py) -- generated
+# output, not something to version; the source it's built from is
+# already tracked.
+dist/
+
 # Python
 __pycache__/
 *.pyc

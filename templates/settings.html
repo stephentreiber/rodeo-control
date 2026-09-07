@@ -165,8 +165,74 @@
   </div>
 </div>
 
+<div class="settings-section">
+  <h2>Updates</h2>
+  <p>Currently installed: <code>{{ current_version }}</code></p>
+  <button type="button" id="check-update-btn" onclick="checkForUpdate()">Check for Updates</button>
+  <p class="settings-hint">Applying an update requires closing and restarting the app afterward, so it's best
+  done between rounds or performances rather than in the middle of live scoring.</p>
+  <div id="update-status" class="settings-hint" style="margin-top:10px;"></div>
+</div>
+
 </div>
 <script>
+function checkForUpdate() {
+  const status = document.getElementById('update-status');
+  const btn = document.getElementById('check-update-btn');
+  btn.disabled = true;
+  status.textContent = 'Checking...';
+  fetch("{{ url_for('check_update') }}")
+    .then(r => r.json())
+    .then(data => {
+      btn.disabled = false;
+      if (data.error) {
+        status.textContent = "Couldn't check for updates right now (" + data.error + "). Check your internet connection and try again.";
+        return;
+      }
+      if (!data.update_available) {
+        status.textContent = "You're up to date (" + data.current_version + ").";
+        return;
+      }
+      let html = '<p><strong>Update available: ' + data.latest_version + '</strong> (currently on ' + data.current_version + ')</p>';
+      if (data.notes) {
+        html += '<pre style="white-space:pre-wrap; font-family:inherit;">' + data.notes.replace(/</g, '&lt;') + '</pre>';
+      }
+      if (data.download_url) {
+        html += '<button type="button" onclick="applyUpdate(\'' + data.download_url + '\')">Download &amp; Install Update</button>';
+      } else {
+        html += '<p>No downloadable release file was found for this release yet.</p>';
+      }
+      status.innerHTML = html;
+    })
+    .catch(err => {
+      btn.disabled = false;
+      status.textContent = "Couldn't check for updates right now (" + err + ").";
+    });
+}
+
+function applyUpdate(downloadUrl) {
+  const status = document.getElementById('update-status');
+  if (!confirm('This will download and install the update now. The app will need to be closed and restarted afterward -- make sure nothing is being actively scored. Continue?')) {
+    return;
+  }
+  status.textContent = 'Downloading and installing update...';
+  fetch("{{ url_for('apply_update_route') }}", {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({download_url: downloadUrl}),
+  })
+    .then(r => r.json())
+    .then(data => {
+      if (data.success) {
+        status.textContent = 'Update installed. Close this window and run run.bat again to restart with the new version.';
+      } else {
+        status.textContent = 'Update failed: ' + data.error;
+      }
+    })
+    .catch(err => {
+      status.textContent = 'Update failed: ' + err;
+    });
+}
 // Clicking a swatch picks that preset in the dropdown (and vice versa) --
 // just a quicker way to select one than opening the dropdown, with the
 // currently-selected swatch always highlighted so it's clear what's

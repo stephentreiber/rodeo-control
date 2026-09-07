@@ -22,11 +22,17 @@ data stays until you explicitly delete it.
 
 To stop the app, close the black console window that `run.bat` opened.
 
-**Updating to a new version:** fully close the old console window first,
-then pull the latest changes (`git pull`) or drop in a fresh copy of the
-files over the old folder, before running `run.bat` again. The app
-caches its pages in memory while running, so dropping in new files without
-restarting won't take effect until you do.
+**Updating to a new version:** open **Settings → Updates** in the app and
+click **Check for Updates**. If a newer version is available, its release
+notes are shown along with a **Download & Install Update** button — clicking
+it downloads and installs the update automatically, without touching your
+`rodeo_data.db` or anything in `exports/`. Fully close and restart the app
+afterward (the app caches its pages in memory while running, so the update
+won't actually take effect until you do). This requires an internet
+connection; if the machine you're running on doesn't have one, grab the
+latest release manually from the
+[Releases page](https://github.com/stephentreiber/rodeo-control/releases)
+and drop it in over the old folder instead.
 
 ## 2. How it works
 

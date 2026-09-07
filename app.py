@@ -17,6 +17,7 @@ from database import get_conn, init_db, get_setting, set_setting, DEFAULT_SETTIN
 import xml_export
 import importer
 import scoring
+import updater
 
 app = Flask(__name__)
 app.secret_key = "rodeo-local-app-secret"
@@ -3040,6 +3041,7 @@ def settings():
         judge_url=_judge_url(),
         judge_qr_svg=_judge_qr_svg(),
         theme_presets=THEME_PRESETS,
+        current_version=updater.get_current_version(),
     )
 
 
@@ -3296,6 +3298,20 @@ def backup_import():
         f"backups folder ({os.path.basename(safety_path)}) in case this wasn't the file you meant to restore."
     )
     return redirect(url_for("settings"))
+
+
+# ---------- Updates (GitHub Releases) ----------
+# Deliberately click-to-check / click-to-apply only -- see updater.py
+# for why this never runs on its own.
+@app.route("/settings/check-update")
+def check_update():
+    return jsonify(updater.check_latest_release())
+
+
+@app.route("/settings/apply-update", methods=["POST"])
+def apply_update_route():
+    download_url = (request.get_json(silent=True) or {}).get("download_url")
+    return jsonify(updater.apply_update(download_url))
 
 
 def open_browser():

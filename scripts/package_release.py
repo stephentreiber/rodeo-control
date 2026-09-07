@@ -2,7 +2,8 @@
 
 Run from anywhere inside the repo:
 
-    python scripts/package_release.py
+    python scripts/package_release.py              # work-in-progress build
+    python scripts/package_release.py --committed   # official, release-ready build
 
 Packages every git-tracked file (via `git ls-files`, so anything in
 .gitignore -- the database, exports, import cache, backups, saved
@@ -11,13 +12,16 @@ in sync) into a single flat zip: extracting it drops app.py,
 static/, templates/, etc. straight into whatever folder is extracted
 into, with no extra wrapping folder to navigate through.
 
-Named from the local VERSION file, e.g. rodeo-control-2026.09.06a.zip.
-That file's contents should be bumped, and the matching git tag
-(e.g. v2026.09.06a) created, before running this.
-
-The resulting zip belongs attached as a Release asset on the
-corresponding GitHub Release -- that's what the in-app updater
-(see updater.py) looks for and downloads.
+Named from the local VERSION file, e.g. rodeo-control-2026.09.06a.zip
+-- but by default gets an "-uncommitted" suffix
+(rodeo-control-2026.09.06a-uncommitted.zip) as a visual reminder not
+to attach that file to a GitHub Release. Pass --committed once the
+matching code has actually been committed (and, for an official
+release, tagged) to drop the suffix and get the clean, release-ready
+filename. VERSION itself is NOT bumped by this script either way --
+that's a separate, deliberate step (see RELEASING.md), since the same
+VERSION can legitimately back several work-in-progress zips before
+anything is actually committed.
 """
 import os
 import subprocess
@@ -37,6 +41,8 @@ def _tracked_files():
 
 
 def main():
+    committed = "--committed" in sys.argv
+
     try:
         with open(VERSION_FILE, "r", encoding="utf-8") as f:
             version = f.read().strip()
@@ -59,7 +65,8 @@ def main():
         sys.exit(1)
 
     os.makedirs(OUTPUT_DIR, exist_ok=True)
-    zip_name = f"rodeo-control-{version}.zip"
+    suffix = "" if committed else "-uncommitted"
+    zip_name = f"rodeo-control-{version}{suffix}.zip"
     zip_path = os.path.join(OUTPUT_DIR, zip_name)
 
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
@@ -71,7 +78,12 @@ def main():
             zf.write(full_path, arcname=rel_path)
 
     print(f"Built {zip_path} ({len(files)} files, version {version}).")
-    print("Attach this file as a Release asset on GitHub for the in-app updater to find it.")
+    if committed:
+        print("Attach this file as a Release asset on GitHub for the in-app updater to find it.")
+    else:
+        print("This is a work-in-progress build -- do NOT attach it to a GitHub Release.")
+        print("Once this code is actually committed (and tagged, for an official release),")
+        print("re-run with --committed to get the clean release-ready filename.")
 
 
 if __name__ == "__main__":

@@ -8,19 +8,33 @@ All data is stored permanently in a local SQLite database file
 or coming back on day 3 of a multi-day rodeo does **not** lose anything — the
 data stays until you explicitly delete it.
 
-## 1. First-time setup (Windows)
+## 1. First-time setup
 
-1. Install Python 3.10+ from https://python.org (check "Add Python to PATH"
-   during install).
+1. Install Python 3.10+ from https://python.org.
+   - **Windows:** check "Add Python to PATH" during install.
+   - **macOS:** the installer from python.org is recommended over the
+     system Python. If you use Homebrew instead, `brew install python`.
+   - **Linux:** most distros already have Python 3; if not,
+     `sudo apt install python3 python3-pip` (Debian/Ubuntu) or your
+     distro's equivalent.
 2. Get the code: clone this repo (`git clone <repo-url>`), or use GitHub's
-   green **Code → Download ZIP** button and unzip it wherever you'd like
-   (e.g. `C:\RodeoApp`).
-3. Double-click `install.bat` once. This installs Flask (the only
-   dependency).
-4. Double-click `run.bat` any time you want to start the app. It will open
-   your default browser to the control interface automatically.
+   green **Code → Download ZIP** button (or grab the latest zip from the
+   [Releases page](https://github.com/stephentreiber/rodeo-control/releases))
+   and unzip it wherever you'd like.
+3. **Windows:** double-click `install.bat` once.
+   **macOS/Linux:** open a terminal in this folder and run:
+   ```
+   chmod +x install.sh run.sh
+   ./install.sh
+   ```
+   (the `chmod` only needs to be done once, the first time)
+4. **Windows:** double-click `run.bat` any time you want to start the app.
+   **macOS/Linux:** run `./run.sh` any time you want to start it.
+   Either way, your default browser opens to the control interface
+   automatically.
 
-To stop the app, close the black console window that `run.bat` opened.
+To stop the app, close the console/terminal window it opened (or press
+Ctrl+C).
 
 **Updating to a new version:** open **Settings → Updates** in the app and
 click **Check for Updates**. If a newer version is available, its release
@@ -322,6 +336,12 @@ error or freeze on a stale value than a field that's simply empty.
 
 ## 4. Hooking up vMix
 
+Note: vMix and Ross XPression are both Windows-only software, regardless of
+what computer Rodeo Control itself is running on. If you're running Rodeo
+Control on a Mac or Linux machine, point vMix/XPression (on their own
+Windows machine) at a shared network folder instead of a local path — see
+the Export Folder setting mentioned in step 2 below.
+
 1. In vMix, add a **Data Source**: Settings → Data Sources → Add.
 2. Choose **XML File**, point it at e.g. `C:\RodeoApp\exports\whos_up.xml`.
 3. Set the refresh interval (1–2 seconds is plenty).
@@ -376,6 +396,9 @@ you know where to look closely on the review screen below. OCR requires
 - Windows: install [Tesseract](https://github.com/UB-Mannheim/tesseract/wiki)
   and [Poppler for Windows](https://github.com/oschwartz10612/poppler-windows/releases),
   and make sure both are on your `PATH`.
+- macOS: `brew install tesseract poppler`
+- Linux: `sudo apt install tesseract-ocr poppler-utils` (Debian/Ubuntu) or
+  your distro's equivalent packages
 - If neither is installed, HTML/Excel import and text-based PDF import still
   work fine — only scanned/image PDFs need them, and you'll get a clear
   message instead of a crash if OCR is attempted without them.

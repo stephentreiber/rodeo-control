@@ -3324,9 +3324,9 @@ def open_browser():
 def local_lan_ip():
     """Best-effort guess at this machine's LAN IP, so the judge applet's
     address can be printed at startup instead of making the scorekeeper
-    go dig it out of ipconfig. Doesn't actually send any traffic --
-    opening a UDP socket to an external address just makes the OS pick
-    which local interface/IP it would use, without anything being
+    go dig it out of the OS's network settings. Doesn't actually send any
+    traffic -- opening a UDP socket to an external address just makes the
+    OS pick which local interface/IP it would use, without anything being
     transmitted."""
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
@@ -3405,10 +3405,10 @@ if __name__ == "__main__":
         print(f"Judges on this WiFi: http://{lan_ip}:5000/judge")
     else:
         print("Couldn't detect a LAN address -- judges' devices need this")
-        print("computer's WiFi IP address (see `ipconfig`) followed by")
-        print(":5000/judge, e.g. http://192.168.1.42:5000/judge")
-    print("If a phone/tablet can't connect, check Windows Firewall hasn't")
-    print("blocked this app on your network (see the prompt on first run).")
+        print("computer's WiFi IP address (check your network settings)")
+        print("followed by :5000/judge, e.g. http://192.168.1.42:5000/judge")
+    print("If a phone/tablet can't connect, check this computer's firewall")
+    print("hasn't blocked this app on your network (see the prompt on first run).")
     print("=" * 60)
 
     # 0.0.0.0 (not 127.0.0.1) is what makes the server reachable from

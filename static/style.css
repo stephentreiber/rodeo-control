@@ -472,6 +472,14 @@ tr.live { background: var(--color-warning-bg) !important; }
 }
 .cp-stock-value { font-size: 1.3em; font-weight: 700; color: var(--color-text); word-break: break-word; }
 .cp-stock-sub { font-size: 0.95em; color: var(--color-text-muted); }
+/* Team roping: the heeler is a person, not a stock animal -- matches
+   .cp-name-block's typography exactly (2em bold name, accent-colored
+   hometown) so header and heeler read as equally prominent, instead of
+   the smaller/muted sizing appropriate for a draw animal's name. Only
+   applied when this modifier class is present (see cpRender() in
+   event_detail.html), so non-team events keep the original sizing. */
+.cp-stock-block-team .cp-stock-value { font-size: 2em; font-weight: 800; }
+.cp-stock-block-team .cp-stock-sub { font-size: 1.1em; color: var(--color-accent); font-weight: 600; margin-top: 2px; }
 .cp-score-block { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; min-width: 0; max-width: 100%; }
 .cp-score-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; max-width: 100%; }
 .cp-score-input { font-size: 1.6em; width: 140px; padding: 8px; text-align: center; flex: 0 0 auto; }

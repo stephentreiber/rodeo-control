@@ -72,7 +72,7 @@
       <div class="cp-hometown" id="cp-hometown"></div>
       <div class="cp-to-lead" id="cp-to-lead"></div>
     </div>
-    <div class="cp-stock-block">
+    <div class="cp-stock-block {{ 'cp-stock-block-team' if panel_is_team_event else '' }}" id="cp-stock-block">
       <span class="cp-stock-label" id="cp-stock-label">{{ 'Heeler' if panel_is_team_event else 'Draw Animal' }}</span>
       <div class="cp-stock-value" id="cp-stock-value"></div>
       <div class="cp-stock-sub" id="cp-stock-sub"></div>
@@ -114,7 +114,7 @@
   <tr>
     <th>#</th><th>Draw #</th>
     {% if current_round_key == 'all' %}<th>Round</th>{% endif %}
-    <th>Competitor</th><th>{{ 'Heeler' if is_team_event else 'Draw Animal' }}</th><th>Score</th><th>Who's Up</th><th></th>
+    <th>{{ 'Header' if is_team_event else 'Competitor' }}</th><th>{{ 'Heeler' if is_team_event else 'Draw Animal' }}</th><th>Score</th><th>Who's Up</th><th></th>
   </tr>
   {% for e in entries %}
   <tr class="row-{{ e.status }} {{ 'live' if e.id == whos_up_entry_id }} {{ 'draggable-row' if current_round_key != 'all' }}" data-entry-id="{{ e.id }}">
@@ -420,6 +420,13 @@ function cpRender() {
     if (toLeadEl) toLeadEl.textContent = e.to_lead ? ('To Lead: ' + e.to_lead) : '';
     const stockLabelEl = document.getElementById('cp-stock-label');
     if (stockLabelEl) stockLabelEl.textContent = CP_IS_TEAM ? 'Heeler' : 'Draw Animal';
+    // Team roping: the heeler is a person, just as important as the
+    // header shown in cp-name-block, so this modifier class makes the
+    // heeler's name/hometown match that block's typography exactly
+    // (see .cp-stock-block.cp-stock-block-team in style.css) instead of
+    // the smaller/muted styling appropriate for a stock animal name.
+    const stockBlockEl = document.getElementById('cp-stock-block');
+    if (stockBlockEl) stockBlockEl.classList.toggle('cp-stock-block-team', CP_IS_TEAM);
     if (CP_IS_TEAM) {
       document.getElementById('cp-stock-value').textContent = e.partner || '';
       document.getElementById('cp-stock-sub').textContent = e.partner_hometown || '';

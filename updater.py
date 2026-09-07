@@ -16,7 +16,6 @@ that file), which produces a flat zip -- no wrapping top-level folder
 """
 import json
 import os
-import re
 import shutil
 import tempfile
 import urllib.error
@@ -75,18 +74,16 @@ def check_latest_release():
     tag = data.get("tag_name", "") or ""
     latest_version = tag[1:] if tag.startswith("v") else tag
 
-    # Only look at assets we ourselves uploaded (package_release.py's
-    # output) -- GitHub's own auto-attached "Source code" zip/tarball
-    # never show up in this "assets" list, only manually-uploaded
-    # release files do, so this can't accidentally grab those instead.
-    # The pattern is deliberately strict (exact "rodeo-control-<version>.zip",
-    # nothing else) so a work-in-progress build accidentally uploaded
-    # with its "-uncommitted" suffix intact (see package_release.py)
-    # still won't match and get offered as an update.
+    # Only look at the asset we ourselves uploaded (package_release.py's
+    # --committed output) -- GitHub's own auto-attached "Source code"
+    # zip/tarball never show up in this "assets" list, only
+    # manually-uploaded release files do. The name is a fixed,
+    # version-free "rodeo-control.zip" on purpose (see
+    # package_release.py's docstring) -- every release re-uses this
+    # exact name, which is what keeps a first-time install's extracted
+    # folder name from ever going stale after a later update.
     zip_asset = next(
-        (a for a in data.get("assets", [])
-         if re.fullmatch(r"rodeo-control-[\w.\-]+?\.zip", a.get("name", ""))
-         and "uncommitted" not in a.get("name", "")),
+        (a for a in data.get("assets", []) if a.get("name") == "rodeo-control.zip"),
         None,
     )
 

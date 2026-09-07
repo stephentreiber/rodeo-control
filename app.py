@@ -203,6 +203,75 @@ def index():
 
 
 # ---------- Competitors ----------
+def _try_link_partner(conn, competitor_id):
+    """Best-effort partner_id linking for a single competitor -- repairs
+    a one-directional link (this competitor already points at a partner
+    by id, but that partner doesn't point back -- e.g. from data that
+    only ever got linked in one direction, see the startup backfill in
+    database.py), and otherwise tries a fresh match by name against the
+    free-text `partner` field, in EITHER direction.
+
+    The original one-shot check (both here and in database.py's startup
+    migration) only ever set ONE side of the relationship, and excluded
+    any candidate that already had a partner_id set at all -- which
+    meant a partner who was already correctly linked TO this competitor
+    still couldn't get linked back FROM this competitor, since having
+    any partner_id looked identical to "already paired with someone
+    else." This version treats "already points back to me" as an
+    always-safe case to complete, and only ever refuses to touch a
+    side that's linked to some genuinely different competitor."""
+    row = conn.execute("SELECT * FROM competitors WHERE id = ?", (competitor_id,)).fetchone()
+    if not row:
+        return
+
+    # This competitor already has an id-based link -- the highest-
+    # confidence case, since it's an explicit reference, not a text
+    # guess. Make sure the other side points back, unless it's already
+    # linked to someone else entirely (never overwrite that).
+    if row["partner_id"]:
+        target = conn.execute(
+            "SELECT id, partner_id FROM competitors WHERE id = ?", (row["partner_id"],)
+        ).fetchone()
+        if target and not target["partner_id"]:
+            conn.execute("UPDATE competitors SET partner_id = ? WHERE id = ?", (competitor_id, target["id"]))
+        return
+
+    # No id-based link on this side yet -- but someone else might
+    # already point at THIS competitor by id (the reverse of the case
+    # above, just discovered from the other end). This is the pure
+    # one-directional id-link case with no free text at all to match
+    # against, which the text fallback below can't see.
+    reverse = conn.execute(
+        "SELECT id FROM competitors WHERE partner_id = ? LIMIT 1", (competitor_id,)
+    ).fetchone()
+    if reverse:
+        conn.execute("UPDATE competitors SET partner_id = ? WHERE id = ?", (reverse["id"], competitor_id))
+        return
+
+    # No id-based link either way -- fall back to matching by
+    # name text, in either direction. A candidate that already points
+    # back to this competitor counts as a match too (that's the
+    # one-directional-repair case); a candidate linked to someone else
+    # entirely is left alone.
+    if row["partner"]:
+        match = conn.execute(
+            "SELECT id, partner_id FROM competitors WHERE UPPER(name) = UPPER(?) AND id != ?",
+            (row["partner"], competitor_id),
+        ).fetchone()
+        if match and (not match["partner_id"] or match["partner_id"] == competitor_id):
+            conn.execute("UPDATE competitors SET partner_id = ? WHERE id = ?", (match["id"], competitor_id))
+            conn.execute("UPDATE competitors SET partner_id = ? WHERE id = ?", (competitor_id, match["id"]))
+            return
+
+    match = conn.execute(
+        "SELECT id, partner_id FROM competitors WHERE UPPER(partner) = UPPER(?) AND id != ?",
+        (row["name"], competitor_id),
+    ).fetchone()
+    if match and (not match["partner_id"] or match["partner_id"] == competitor_id):
+        conn.execute("UPDATE competitors SET partner_id = ? WHERE id = ?", (match["id"], competitor_id))
+        conn.execute("UPDATE competitors SET partner_id = ? WHERE id = ?", (competitor_id, match["id"]))
+
+
 @app.route("/competitors", methods=["GET", "POST"])
 def competitors():
     conn = get_conn()
@@ -221,18 +290,19 @@ def competitors():
             ),
         )
         new_id = cur.lastrowid
-        if partner_name:
-            match = conn.execute(
-                "SELECT id FROM competitors WHERE UPPER(name) = UPPER(?) AND id != ?",
-                (partner_name, new_id),
-            ).fetchone()
-            if match:
-                conn.execute("UPDATE competitors SET partner_id = ? WHERE id = ?", (match["id"], new_id))
-                conn.execute("UPDATE competitors SET partner_id = ? WHERE id = ?", (new_id, match["id"]))
+        _try_link_partner(conn, new_id)
         conn.commit()
         conn.close()
         return redirect(url_for("competitors"))
-    people = conn.execute("SELECT * FROM competitors ORDER BY name").fetchall()
+    people = conn.execute(
+        """
+        SELECT c.id, c.name, c.hometown, c.sponsor, c.partner_id, c.draw_animal,
+               c.notes, c.created_at, COALESCE(pc.name, c.partner) as partner
+        FROM competitors c
+        LEFT JOIN competitors pc ON c.partner_id = pc.id
+        ORDER BY c.name
+        """
+    ).fetchall()
     conn.close()
     return render_template("competitors.html", people=people)
 
@@ -1344,11 +1414,38 @@ def update_draw_animal(eid):
     return jsonify(ok=True, display=value)
 
 
+def _partner_display_updates(conn, competitor_id):
+    """For the Manage > Competitors page's inline editing: returns
+    (this competitor's own current Partner column text, an update for
+    the OTHER row if this competitor is linked to one -- since a name
+    change here can change what that other row's Partner column should
+    show, and a fresh link (see _try_link_partner) can mean neither
+    row's Partner column has ever reflected the pairing yet). The Partner
+    column is a plain server-rendered cell, not an editable field, so
+    the click-to-edit JS has no other way to learn it needs patching."""
+    row = conn.execute(
+        """
+        SELECT c.name, c.partner_id, COALESCE(pc.name, c.partner) as partner_display
+        FROM competitors c LEFT JOIN competitors pc ON c.partner_id = pc.id
+        WHERE c.id = ?
+        """,
+        (competitor_id,),
+    ).fetchone()
+    if not row:
+        return None, None
+    partner_row_update = None
+    if row["partner_id"]:
+        partner_row_update = {"competitor_id": row["partner_id"], "partner_display": row["name"]}
+    return row["partner_display"], partner_row_update
+
+
 @app.route("/competitors/<int:cid>/update_field", methods=["POST"])
 def update_competitor_field(cid):
-    """Inline edit of a competitor's name or hometown from the draw page.
-    These are shared across every round/event the competitor is entered
-    in, so the change applies everywhere at once.
+    """Inline edit of a competitor field -- name/hometown from the draw
+    page (event_detail.html) and the Manage > Competitors page, plus
+    sponsor/draw_animal/notes from the Manage > Competitors page. These
+    are shared across every round/event the competitor is entered in, so
+    a change applies everywhere at once.
 
     Renaming to match an EXISTING different competitor merges into that
     record instead of creating a second one with the same name -- the
@@ -1365,6 +1462,10 @@ def update_competitor_field(cid):
         value = importer.format_name(raw)
     elif field == "hometown":
         value = importer.fix_hometown(raw)
+    elif field == "draw_animal":
+        value = importer.format_draw_animal(raw)
+    elif field in ("sponsor", "notes"):
+        value = raw
     else:
         return jsonify(ok=False, error="Unknown field."), 400
 
@@ -1398,16 +1499,26 @@ def update_competitor_field(cid):
             # leave a dangling foreign key.
             conn.execute("UPDATE competitors SET partner_id = ? WHERE partner_id = ?", (target_id, cid))
             conn.execute("DELETE FROM competitors WHERE id = ?", (cid,))
+            # The merged-in record's name (now the surviving one) might
+            # newly match some other unlinked competitor's partner text
+            # -- see _try_link_partner.
+            _try_link_partner(conn, target_id)
             conn.commit()
             conn.close()
             xml_export.export_all()
             return jsonify(ok=True, display=existing["name"], merged=True, competitor_id=target_id)
 
     conn.execute(f"UPDATE competitors SET {field} = ? WHERE id = ?", (value, cid))
+    if field == "name":
+        # A corrected/changed name might now match a partner that was
+        # entered (by name only) before this one existed, or before its
+        # name was fixed -- see _try_link_partner.
+        _try_link_partner(conn, cid)
     conn.commit()
+    partner_display, partner_row_update = _partner_display_updates(conn, cid)
     conn.close()
     xml_export.export_all()
-    return jsonify(ok=True, display=value)
+    return jsonify(ok=True, display=value, partner_display=partner_display, partner_row_update=partner_row_update)
 
 
 @app.route("/entries/<int:eid>/quick_score", methods=["POST"])
@@ -3399,7 +3510,7 @@ if __name__ == "__main__":
 
     lan_ip = local_lan_ip()
     print("=" * 60)
-    print("Rodeo Control is running.")
+    print(f"Rodeo Control is running. (version {updater.get_current_version()})")
     print("This computer:      http://127.0.0.1:5000/")
     if lan_ip:
         print(f"Judges on this WiFi: http://{lan_ip}:5000/judge")

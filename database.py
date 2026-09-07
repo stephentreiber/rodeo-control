@@ -271,16 +271,22 @@ def init_db():
     # to an actual competitor record by exact name match, so hometown etc.
     # can be looked up for team roping exports. Cheap and idempotent, so it
     # just runs every startup rather than needing its own migration flag.
+    #
+    # Sets BOTH sides of the link -- a competitor whose partner_id already
+    # correctly points here, but who was never pointed back to (e.g. from
+    # an older version of this backfill that only set one direction), gets
+    # repaired here too, not just brand-new unlinked text.
     unlinked = conn.execute(
         "SELECT id, partner FROM competitors WHERE partner_id IS NULL AND partner != ''"
     ).fetchall()
     for row in unlinked:
         match = conn.execute(
-            "SELECT id FROM competitors WHERE UPPER(name) = UPPER(?) AND id != ?",
+            "SELECT id, partner_id FROM competitors WHERE UPPER(name) = UPPER(?) AND id != ?",
             (row["partner"], row["id"]),
         ).fetchone()
-        if match:
+        if match and (not match["partner_id"] or match["partner_id"] == row["id"]):
             conn.execute("UPDATE competitors SET partner_id = ? WHERE id = ?", (match["id"], row["id"]))
+            conn.execute("UPDATE competitors SET partner_id = ? WHERE id = ?", (row["id"], match["id"]))
 
     conn.commit()
     conn.close()

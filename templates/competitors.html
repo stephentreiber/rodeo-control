@@ -15,14 +15,38 @@
 </form>
 
 <table class="list">
-  <tr><th>Name</th><th>Hometown</th><th>Sponsor</th><th>Partner</th><th>Draw Animal</th><th></th></tr>
-  {% for p in people %}
   <tr>
-    <td>{{ p.name }}</td>
-    <td>{{ p.hometown }}</td>
-    <td>{{ p.sponsor }}</td>
-    <td>{{ p.partner }}</td>
-    <td>{{ p.draw_animal }}</td>
+    <th>Name</th><th>Hometown</th><th>Sponsor</th>
+    <th>Partner <span class="tip" tabindex="0">?
+      <span class="tip-bubble">Not editable here -- team roping partners are linked from the draw sheet
+      (see a round's draw page) so the link stays consistent with that competitor's own record, rather than
+      just a text label that could drift out of sync.</span>
+    </span></th>
+    <th>Draw Animal</th><th>Notes</th><th></th>
+  </tr>
+  {% for p in people %}
+  <tr data-competitor-id="{{ p.id }}">
+    <td class="editable-cell">
+      <input type="text" class="edit-field" value="{{ p.name }}"
+             data-endpoint="/competitors/{{ p.id }}/update_field" data-field="name">
+    </td>
+    <td class="editable-cell">
+      <input type="text" class="edit-field" value="{{ p.hometown }}" placeholder="hometown"
+             data-endpoint="/competitors/{{ p.id }}/update_field" data-field="hometown">
+    </td>
+    <td class="editable-cell">
+      <input type="text" class="edit-field" value="{{ p.sponsor }}" placeholder="sponsor"
+             data-endpoint="/competitors/{{ p.id }}/update_field" data-field="sponsor">
+    </td>
+    <td class="partner-cell">{{ p.partner }}</td>
+    <td class="editable-cell">
+      <input type="text" class="edit-field" value="{{ p.draw_animal }}" placeholder="draw animal"
+             data-endpoint="/competitors/{{ p.id }}/update_field" data-field="draw_animal">
+    </td>
+    <td class="editable-cell">
+      <input type="text" class="edit-field" value="{{ p.notes }}" placeholder="notes"
+             data-endpoint="/competitors/{{ p.id }}/update_field" data-field="notes">
+    </td>
     <td>
       <form method="post" action="{{ url_for('delete_competitor', cid=p.id) }}" onsubmit="return confirm('Delete this competitor and their entries?');">
         <button class="danger" type="submit">Delete</button>
@@ -31,4 +55,69 @@
   </tr>
   {% endfor %}
 </table>
+
+<script>
+// Inline field editing -- same click-to-edit-and-blur-to-save pattern as
+// the draw table's name/hometown fields and the Guests page.
+function saveCompetitorField(input) {
+  const endpoint = input.dataset.endpoint;
+  const field = input.dataset.field;
+  const typedValue = input.value;
+  fetch(endpoint, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+    body: `field=${encodeURIComponent(field)}&value=${encodeURIComponent(typedValue)}`
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.ok) {
+      input.value = data.display;
+      input.classList.remove('input-error');
+      input.classList.add('input-saved');
+      setTimeout(() => input.classList.remove('input-saved'), 700);
+      // Renaming to match an existing competitor merges the two records
+      // (see update_competitor_field) -- the page needs a reload in that
+      // one case so the now-merged/removed row doesn't linger stale.
+      if (data.merged) {
+        location.reload();
+        return;
+      }
+      // Partner is a plain server-rendered cell, not an editable field,
+      // so it never gets touched by the input-value update above -- patch
+      // it directly. This row's own Partner cell (a name change can
+      // affect what a linked partner is displaying elsewhere, but this
+      // row's own Partner text can also change, e.g. a fresh link just
+      // formed -- see _try_link_partner) ...
+      const row = input.closest('tr');
+      const partnerCell = row && row.querySelector('.partner-cell');
+      if (partnerCell && typeof data.partner_display === 'string') {
+        partnerCell.textContent = data.partner_display;
+      }
+      // ...and the OTHER row's Partner cell, if this competitor is
+      // linked to one -- that row shows this competitor's name, which
+      // just changed (or the link itself is brand new).
+      if (data.partner_row_update) {
+        const otherRow = document.querySelector(
+          `tr[data-competitor-id="${data.partner_row_update.competitor_id}"]`
+        );
+        const otherCell = otherRow && otherRow.querySelector('.partner-cell');
+        if (otherCell) {
+          otherCell.textContent = data.partner_row_update.partner_display;
+        }
+      }
+    } else {
+      input.classList.add('input-error');
+      input.value = typedValue;
+    }
+  })
+  .catch(() => { input.classList.add('input-error'); input.value = typedValue; });
+}
+document.querySelectorAll('.edit-field').forEach(input => {
+  input.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+    else if (e.key === 'Escape') { input.blur(); }
+  });
+  input.addEventListener('blur', function() { saveCompetitorField(input); });
+});
+</script>
 {% endblock %}

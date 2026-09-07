@@ -18,9 +18,12 @@ data stays until you explicitly delete it.
      `sudo apt install python3 python3-pip` (Debian/Ubuntu) or your
      distro's equivalent.
 2. Get the code: clone this repo (`git clone <repo-url>`), or use GitHub's
-   green **Code → Download ZIP** button (or grab the latest zip from the
-   [Releases page](https://github.com/stephentreiber/rodeo-control/releases))
-   and unzip it wherever you'd like.
+   green **Code → Download ZIP** button, or grab the latest zip from the
+   [Releases page](https://github.com/stephentreiber/rodeo-control/releases)
+   (this one is named plainly `rodeo-control.zip`, with no version in the
+   filename, so extracting it gives a permanently-named `rodeo-control`
+   folder that later in-app updates won't make stale). Unzip it wherever
+   you'd like.
 3. **Windows:** double-click `install.bat` once.
    **macOS/Linux:** open a terminal in this folder and run:
    ```

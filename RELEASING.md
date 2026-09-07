@@ -44,12 +44,19 @@ between these.
    ```
    python scripts/package_release.py --committed
    ```
-   This produces `dist/rodeo-control-2026.09.06a.zip` — no
-   "-uncommitted" suffix this time, since that's the flag that tells the
-   script this is release-ready. It's a flat zip (no wrapping folder)
-   containing everything tracked in git, which automatically excludes the
-   database, exports, caches, and backups since those are already in
-   `.gitignore`.
+   This produces `dist/rodeo-control.zip` — deliberately with **no
+   version in the filename**. Every release re-uses this exact same
+   asset name; the version lives in the git tag, the release title, and
+   inside the running app instead. The reason: when someone extracts a
+   zip via Explorer/Finder's default "Extract All", the OS names the
+   resulting folder after the zip file. If that name has a version baked
+   in, it goes stale the moment a later in-app update changes the files
+   without renaming the folder. A fixed asset name means every future
+   first-time install lands in a folder called `rodeo-control`
+   permanently, with nothing for anyone to rename by hand. It's also a
+   flat zip (no wrapping folder) containing everything tracked in git,
+   which automatically excludes the database, exports, caches, and
+   backups since those are already in `.gitignore`.
 
 5. **Create the GitHub Release.**
    - Go to the repo's **Releases** page → **Draft a new release**.
@@ -59,9 +66,9 @@ between these.
      app's "Check for Updates" screen, so keep them in plain, generic
      language (no names — anyone using this app should be able to read
      them and understand what's new).
-   - Under **Assets**, attach the zip built in step 4
-     (`rodeo-control-2026.09.06a.zip` — the one *without* the
-     "-uncommitted" suffix).
+   - Under **Assets**, attach the zip built in step 4 (`rodeo-control.zip`,
+     unrenamed). Every release attaches a file with this exact same name
+     — that's expected and intentional, not a mistake.
    - Click **Publish release**.
 
 6. **Verify.** Open the app, go to **Settings → Updates**, and click
@@ -82,7 +89,11 @@ between these.
   the first thing to check.
 - Skipping the zip-asset upload (step 5) still creates a valid GitHub
   Release, but the in-app updater has nothing to download — it looks
-  specifically for an attached asset named exactly `rodeo-control-<version>.zip`
-  (no extra suffix), not GitHub's automatic "Source code" zip/tarball, and
-  not a stray "-uncommitted" build either (that suffix is deliberately
-  excluded from what the updater will match).
+  specifically for an attached asset named exactly `rodeo-control.zip`,
+  not GitHub's automatic "Source code" zip/tarball, and not any
+  work-in-progress build's "-uncommitted" filename either.
+- An install folder from before this change may still have a stale
+  version baked into its name — that's harmless and safe to rename
+  any time by hand, since the app doesn't care what its own folder is
+  called. Only *new* first-time installs going forward automatically
+  avoid the problem.

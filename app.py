@@ -2923,6 +2923,9 @@ def import_finalize():
                 request.form.get(f"entry_draw_animal__{gi}", entry.get("draw_animal", ""))
             )
             partner = importer.format_name(request.form.get(f"entry_partner__{gi}", entry.get("partner", "")))
+            partner_hometown = importer.fix_hometown(
+                request.form.get(f"entry_partner_hometown__{gi}", entry.get("partner_hometown", ""))
+            )
             gi += 1
             if removed:
                 continue
@@ -2931,7 +2934,7 @@ def import_finalize():
                 "hometown": hometown,
                 "draw_animal": draw_animal,
                 "partner": partner,
-                "partner_hometown": entry.get("partner_hometown", ""),
+                "partner_hometown": partner_hometown,
                 # Whether this row was genuinely part of the numbered
                 # draw to begin with -- RR/reserve rows (no draw number
                 # in the source file) stay blank no matter how many

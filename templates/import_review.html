@@ -20,10 +20,16 @@
   <table class="list review-import-table">
     <tr>
       <th>#</th>
+      {% if rnd.is_team %}
+      <th>Header Name</th>
+      <th>Header Hometown</th>
+      <th>Heeler Name</th>
+      <th>Heeler Hometown</th>
+      {% else %}
       <th>Name</th>
       <th>Hometown</th>
-      <th>{{ 'Heeler' if rnd.is_team else 'Draw Animal' }}</th>
-      {% if rnd.is_team %}<th>Header</th>{% endif %}
+      <th>Draw Animal</th>
+      {% endif %}
       <th>Remove</th>
     </tr>
     {% for entry in rnd.entries %}
@@ -33,10 +39,11 @@
       <td>{{ entry.draw_number if entry.draw_number is not none else '(RR)' }}</td>
       <td><input type="text" name="entry_name__{{ this_gi }}" value="{{ entry.name }}"></td>
       <td><input type="text" name="entry_hometown__{{ this_gi }}" value="{{ entry.hometown }}"></td>
-      <td><input type="text" name="entry_draw_animal__{{ this_gi }}" value="{{ entry.draw_animal }}"></td>
       {% if rnd.is_team %}
       <td><input type="text" name="entry_partner__{{ this_gi }}" value="{{ entry.partner }}"></td>
+      <td><input type="text" name="entry_partner_hometown__{{ this_gi }}" value="{{ entry.partner_hometown or '' }}"></td>
       {% else %}
+      <td><input type="text" name="entry_draw_animal__{{ this_gi }}" value="{{ entry.draw_animal }}"></td>
       <input type="hidden" name="entry_partner__{{ this_gi }}" value="{{ entry.partner }}">
       {% endif %}
       <td class="review-import-remove-cell">

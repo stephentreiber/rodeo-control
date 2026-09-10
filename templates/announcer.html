@@ -75,7 +75,8 @@ function renderBoard(container, rows, emptyText, rowBuilder) {
 function boardRow(rank, name, hometownOrSub, display, subClass) {
   const li = el('li');
   li.appendChild(el('span', 'announcer-rank', rank));
-  const nameSpan = el('span', 'announcer-board-name', name);
+  const nameSpan = el('span', 'announcer-board-name');
+  nameSpan.appendChild(el('span', 'announcer-board-name-text', name));
   if (hometownOrSub) nameSpan.appendChild(el('span', subClass || 'announcer-board-hometown', hometownOrSub));
   li.appendChild(nameSpan);
   li.appendChild(el('span', 'announcer-board-score', display));

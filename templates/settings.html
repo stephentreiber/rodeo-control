@@ -2,11 +2,11 @@
 {% block content %}
 <h1>Settings</h1>
 
-<form method="post" class="settings-form">
+<form method="post" class="settings-form" id="settings-form">
 <div class="settings-grid">
 
   <div class="settings-section">
-    <h2>General</h2>
+    <h2>Rodeo &amp; Broadcast Setup</h2>
 
     <label>Rodeo Name <input name="rodeo_name" value="{{ rodeo_name }}"></label>
     <p class="settings-hint">Shown throughout the app, on judges' devices, on the Announcer Screen, and baked into
@@ -32,6 +32,33 @@
     fields or a repeating list at all. The numbered fields always exist at this count, blank past however many
     are actually on the board, so the file's structure never changes shape. If "All" is selected, the numbered
     fields still cap at 20 since a fixed set of tags needs an actual number either way.</p>
+  </div>
+
+  <div class="settings-section">
+    <h2>Scoring Setup</h2>
+
+    <label>Number of Judges (Roughstock Events)
+      <select name="judge_count">
+        <option value="2" {{ 'selected' if judge_count == '2' }}>2 (scores added together)</option>
+        <option value="4" {{ 'selected' if judge_count == '4' }}>4 (all four summed, divided by 2)</option>
+      </select>
+    </label>
+    <p class="settings-hint">Applies to every roughstock event. Each judge scores the rider and the stock
+    separately (1-25, half points, 50 max per judge). With 2 judges, both totals are added together; with 4, all
+    four are added together and divided by 2 -- either way it lands on the same 0-100 scale as a directly-typed
+    judged score.</p>
+
+    <label class="settings-subhead">Judge Names <span class="tip" tabindex="0">?
+      <span class="tip-bubble">Give each seat a real name so you can see exactly who's missing a score, instead of
+      just an anonymous seat number, in the Judges panel and anywhere judges disagree. Shown on the judges' own
+      seat-picker and scoring screen too, so they can confirm they picked the right one. Leave any blank to just
+      show "Judge N".</span>
+    </span></label>
+    <div class="judge-name-row">
+      {% for seat in range(1, 5) %}
+      <label>Seat {{ seat }} <input type="text" name="judge_name_{{ seat }}" value="{{ judge_names_raw[seat] }}" placeholder="Judge {{ seat }}"></label>
+      {% endfor %}
+    </div>
 
     <div class="settings-subhead">
       <label><input type="checkbox" name="enable_video_review" value="1" {{ 'checked' if enable_video_review }}
@@ -62,51 +89,24 @@
             style="background: {{ preset.primary }};" title="{{ preset.label }}"></span>
       {% endfor %}
     </div>
-  </div>
-
-  <div class="settings-section">
-    <h2>Judges &amp; Colors</h2>
-
-    <label>Number of Judges (Roughstock Events)
-      <select name="judge_count">
-        <option value="2" {{ 'selected' if judge_count == '2' }}>2 (scores added together)</option>
-        <option value="4" {{ 'selected' if judge_count == '4' }}>4 (all four summed, divided by 2)</option>
-      </select>
-    </label>
-    <p class="settings-hint">Applies to every roughstock event. Each judge scores the rider and the stock
-    separately (1-25, half points, 50 max per judge). With 2 judges, both totals are added together; with 4, all
-    four are added together and divided by 2 -- either way it lands on the same 0-100 scale as a directly-typed
-    judged score.</p>
-
-    <label class="settings-subhead">Judge Names <span class="tip" tabindex="0">?
-      <span class="tip-bubble">Give each seat a real name so you can see exactly who's missing a score, instead of
-      just an anonymous seat number, in the Judges panel and anywhere judges disagree. Shown on the judges' own
-      seat-picker and scoring screen too, so they can confirm they picked the right one. Leave any blank to just
-      show "Judge N".</span>
-    </span></label>
-    <div class="judge-name-row">
-      {% for seat in range(1, 5) %}
-      <label>Seat {{ seat }} <input type="text" name="judge_name_{{ seat }}" value="{{ judge_names_raw[seat] }}" placeholder="Judge {{ seat }}"></label>
-      {% endfor %}
-    </div>
 
     <div class="settings-subhead">
       <label>Announcer Screen Colors</label>
-      <p class="settings-hint">The Announcer Screen (see the nav bar) now follows the same Theme Color chosen under
-      Appearance above -- outlines and headers there always match whatever preset is selected, so there's nothing
-      separate to pick here. Its background and body text stay fixed (near-black and white) for maximum legibility
-      on a monitor viewed from across a booth or truck.</p>
+      <p class="settings-hint">The Announcer Screen (see the nav bar) follows the same Theme Color chosen above --
+      outlines and headers there always match whatever preset is selected, so there's nothing separate to pick
+      here. Its background and body text stay fixed (near-black and white) for maximum legibility on a monitor
+      viewed from across a booth or truck.</p>
     </div>
   </div>
 
 </div>
-<button type="submit" class="settings-save-btn">Save Settings</button>
 </form>
 
 <div class="settings-grid settings-grid-standalone">
 
 <div class="settings-section">
-  <h2>Judge Access</h2>
+  <h2>Live Event Tools</h2>
+
   {% if judge_url %}
   <p>Judges scan this on their own phone or tablet to open the scoring screen — no login, they just pick a seat:</p>
   <div class="judge-qr-block">
@@ -124,24 +124,26 @@
   LAN IP followed by <code>:5000/judge</code> — check <code>ipconfig</code>, or see the console window this app
   was started from.</p>
   {% endif %}
+
+  <div class="settings-subhead">
+    <label>Broadcast Graphics</label>
+    <p class="settings-hint">The three broadcast graphics files normally stay up to date on their own as things
+    change. Use this if vMix / Ross XPression ever looks out of sync and you want to force a fresh write right now.</p>
+    <form method="post" action="{{ url_for('export_now') }}">
+      <button type="submit">Force Re-export Now</button>
+    </form>
+  </div>
 </div>
 
 <div class="settings-section">
-  <h2>Data &amp; Backup</h2>
+  <h2>Wrap-Up &amp; Records</h2>
 
-  <div class="settings-subhead">
-    <label>Switch Rodeo</label>
-    <p class="settings-hint">Back to the New Rodeo / Continue a Rodeo screen shown on startup. Whatever's
-    currently loaded is automatically saved first, so nothing is lost by switching.</p>
-    <form method="post" action="{{ url_for('switch_rodeo') }}" class="inline-form">
-      <button type="submit">Switch Rodeo</button>
-    </form>
-  </div>
-
-  <p class="settings-hint">The three broadcast graphics files normally stay up to date on their own as things
-  change. Use this if vMix / Ross XPression ever looks out of sync and you want to force a fresh write right now.</p>
-  <form method="post" action="{{ url_for('export_now') }}">
-    <button type="submit">Force Re-export Now</button>
+  <p class="settings-hint">One spreadsheet with the final, all-rounds-combined standings for every event --
+  handy once the rodeo's finished, for handing off to a committee or association, or just archiving.
+  Anyone entered but without a scored run in an event (DNS, DQ, etc.) is listed separately under that
+  event, rather than left off.</p>
+  <form method="get" action="{{ url_for('scoring_report_download') }}" class="inline-form">
+    <button type="submit">Download Scoring Report (Excel)</button>
   </form>
 
   <div class="settings-subhead">
@@ -163,10 +165,19 @@
     swapped out for what's in the file. A safety copy of the current data is saved automatically first (in the
     app folder's <code>backups</code> subfolder) in case the wrong file gets picked by mistake.</p>
   </div>
+
+  <div class="settings-subhead">
+    <label>Switch Rodeo</label>
+    <p class="settings-hint">Back to the New Rodeo / Continue a Rodeo screen shown on startup. Whatever's
+    currently loaded is automatically saved first, so nothing is lost by switching.</p>
+    <form method="post" action="{{ url_for('switch_rodeo') }}" class="inline-form">
+      <button type="submit">Switch Rodeo</button>
+    </form>
+  </div>
 </div>
 
 <div class="settings-section">
-  <h2>Updates</h2>
+  <h2>App Maintenance</h2>
   <p>Currently installed: <code>{{ current_version }}</code></p>
   <button type="button" id="check-update-btn" onclick="checkForUpdate()">Check for Updates</button>
   <p class="settings-hint">Applying an update requires closing and restarting the app afterward, so it's best
@@ -175,6 +186,9 @@
 </div>
 
 </div>
+
+<button type="submit" form="settings-form" class="settings-save-btn">Save Settings</button>
+
 <script>
 function checkForUpdate() {
   const status = document.getElementById('update-status');

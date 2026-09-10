@@ -17,6 +17,7 @@ from database import get_conn, init_db, get_setting, set_setting, DEFAULT_SETTIN
 import xml_export
 import importer
 import scoring
+import scoring_report
 import updater
 
 app = Flask(__name__)
@@ -602,10 +603,34 @@ def event_detail(eid):
     is_team_event = bool(event["is_team"])
 
     entries = [dict(e) for e in entries]
+    judge_count = _judge_count()
+    judge_names = _judge_names()
+    is_judged_event = event["scoring_type"] == "judged"
     for e in entries:
         e["display"] = scoring.display_for(e["status"], e["score_value"], event["scoring_type"])
         if current_round_key != "all":
             e["round_locked"] = current_round_row["locked"] if current_round_row else 0
+        if is_judged_event:
+            # Per-judge rider/stock, for the draw sheet's own compact
+            # manual-entry columns (see judge_score_manual_set) -- lets
+            # the scorekeeper type these in directly, right on the draw
+            # sheet, for when a judge's phone/tablet isn't being used at
+            # all. This is what feeds the Stock leaderboard in that
+            # case -- it reads judge_scores the same way regardless of
+            # whether a judge's own device or the scorekeeper typed it.
+            js_rows = conn.execute(
+                "SELECT judge_seat, rider_score, stock_score, outcome FROM judge_scores WHERE entry_id = ?", (e["id"],)
+            ).fetchall()
+            by_seat = {r["judge_seat"]: r for r in js_rows}
+            e["judge_seats"] = [
+                {
+                    "seat": seat,
+                    "rider_score": by_seat[seat]["rider_score"] if seat in by_seat else None,
+                    "stock_score": by_seat[seat]["stock_score"] if seat in by_seat else None,
+                    "outcome": by_seat[seat]["outcome"] if seat in by_seat else "",
+                }
+                for seat in range(1, judge_count + 1)
+            ]
 
     entered_ids = {e["competitor_id"] for e in entries} if current_round_key != "all" else set()
     available = []
@@ -685,6 +710,9 @@ def event_detail(eid):
         hide_contestant_panel=(get_setting("hide_contestant_panel") == "1"),
         judge_outcomes=_judge_outcomes(),
         no_rider_score_outcomes=_judge_outcomes_no_rider_score(),
+        judge_count=judge_count,
+        judge_names=judge_names,
+        is_judged_event=is_judged_event,
     )
 
 
@@ -812,6 +840,73 @@ def _combined_preview(conn, eid, judge_count):
         scoring.combine_scores_by_seat(rider_by_seat, judge_count),
         scoring.combine_scores_by_seat(stock_by_seat, judge_count),
     )
+
+
+@app.route("/events/<int:eid>/draw_judge_scores")
+def draw_judge_scores(eid):
+    """Bulk rider/stock/outcome for every entry currently visible on the
+    draw sheet, in one query -- powers that page's own live polling
+    (see pollDrawJudgeScores) so a judge submitting from their own
+    device shows up there too, not just in the Current Contestant panel
+    above it. Deliberately one request for the whole round (or whole
+    event, on the All Rounds view) rather than one per entry per poll
+    cycle -- keeps this cheap regardless of how many competitors are on
+    the sheet."""
+    conn = get_conn()
+    event = conn.execute("SELECT scoring_type FROM events WHERE id = ?", (eid,)).fetchone()
+    if not event or event["scoring_type"] != "judged":
+        conn.close()
+        return jsonify(ok=False, error="Not a judged event."), 400
+
+    round_key = request.args.get("round", "")
+    if round_key == "all":
+        entry_ids = [r["id"] for r in conn.execute(
+            "SELECT e.id FROM entries e JOIN rounds r ON e.round_id = r.id WHERE r.event_id = ?", (eid,)
+        )]
+    else:
+        entry_ids = [r["id"] for r in conn.execute("SELECT id FROM entries WHERE round_id = ?", (round_key,))]
+
+    if not entry_ids:
+        conn.close()
+        return jsonify(ok=True, entries={})
+
+    judge_count = _judge_count()
+    placeholders = ",".join("?" * len(entry_ids))
+    rows = conn.execute(
+        f"SELECT entry_id, judge_seat, rider_score, stock_score, outcome "
+        f"FROM judge_scores WHERE entry_id IN ({placeholders})",
+        entry_ids,
+    ).fetchall()
+    entry_meta_rows = conn.execute(
+        f"SELECT id, status, re_ride_taken FROM entries WHERE id IN ({placeholders})", entry_ids
+    ).fetchall()
+    conn.close()
+
+    entry_meta = {r["id"]: r for r in entry_meta_rows}
+    by_entry = {}
+    for r in rows:
+        by_entry.setdefault(r["entry_id"], {})[r["judge_seat"]] = r
+
+    entries = {}
+    for entry_id in entry_ids:
+        seats_by_seat = by_entry.get(entry_id, {})
+        seats = [
+            {
+                "seat": seat,
+                "rider_score": seats_by_seat[seat]["rider_score"] if seat in seats_by_seat else None,
+                "stock_score": seats_by_seat[seat]["stock_score"] if seat in seats_by_seat else None,
+                "outcome": seats_by_seat[seat]["outcome"] if seat in seats_by_seat else "",
+            }
+            for seat in range(1, judge_count + 1)
+        ]
+        meta = entry_meta.get(entry_id)
+        entries[entry_id] = {
+            "seats": seats,
+            "status": meta["status"] if meta else None,
+            "re_ride_taken": bool(meta["re_ride_taken"]) if meta else False,
+            "has_rr_flag": any(s["outcome"] == "RR" for s in seats),
+        }
+    return jsonify(ok=True, entries=entries)
 
 
 @app.route("/events/<int:eid>/judge-scores")
@@ -2337,6 +2432,92 @@ def stock_page():
 
 
 # ---------- Leaderboards ----------
+def _combine_team_hometowns(hometown, partner_hometown):
+    """Same 'Header/Heeler' combining as xml_export._team_names, but for
+    hometown -- showing only the header's hometown on a team roping row
+    looked like it was the whole team's when it's really just half, so
+    pair it with the partner's the same way the name column already is.
+    Falls back to just the one hometown if the partner doesn't have one
+    on file, so this never ends with a dangling "/"."""
+    if not partner_hometown:
+        return hometown
+    return f"{hometown}/{partner_hometown}"
+
+
+def _round_board_rows(conn, round_ids, scoring_type, is_team, limit=None):
+    """Round-leaderboard rows for a specific set of round ids -- ranked,
+    with team roping's header/heeler combined into one display name
+    (see xml_export._team_names) and hometown (see
+    _combine_team_hometowns above) rather than just the header's own.
+    Shared by the Leaderboards page and the Announcer Screen so the two
+    can't drift apart on this again."""
+    if not round_ids:
+        return []
+    order = scoring.sort_order(scoring_type)
+    placeholders = ",".join("?" * len(round_ids))
+    query = f"""
+        SELECT e.score_value, c.name, c.hometown,
+               COALESCE(pc.name, c.partner) as partner,
+               pc.hometown as partner_hometown
+        FROM entries e
+        JOIN competitors c ON e.competitor_id = c.id
+        LEFT JOIN competitors pc ON c.partner_id = pc.id
+        WHERE e.round_id IN ({placeholders}) AND e.status = 'scored'
+        ORDER BY e.score_value {order}
+    """
+    params = list(round_ids)
+    if limit:
+        query += " LIMIT ?"
+        params.append(limit)
+    rows = conn.execute(query, params).fetchall()
+    result = []
+    for r in rows:
+        display_name, _ = xml_export._team_names(r["name"], r["partner"] if is_team else "")
+        display_hometown = _combine_team_hometowns(r["hometown"], r["partner_hometown"] if is_team else "")
+        result.append({
+            "name": display_name, "hometown": display_hometown,
+            "display": scoring.format_number(r["score_value"], scoring_type),
+        })
+    return result
+
+
+def _aggregate_board_rows(conn, round_ids, scoring_type, is_team, limit=None):
+    """Aggregate-leaderboard rows (every round in the event combined) --
+    same team-name/hometown combining as _round_board_rows above, and
+    the same more-head-always-outranks-fewer-head ranking rule used
+    everywhere else aggregate standings are computed (see
+    xml_export.export_aggregate_leaderboard)."""
+    if not round_ids:
+        return []
+    placeholders = ",".join("?" * len(round_ids))
+    rows = conn.execute(
+        f"""
+        SELECT c.name, c.hometown, COALESCE(pc.name, c.partner) as partner,
+               pc.hometown as partner_hometown,
+               SUM(e.score_value) as total, COUNT(e.id) as head
+        FROM entries e
+        JOIN competitors c ON e.competitor_id = c.id
+        LEFT JOIN competitors pc ON c.partner_id = pc.id
+        WHERE e.round_id IN ({placeholders}) AND e.status = 'scored'
+        GROUP BY c.id
+        """,
+        round_ids,
+    ).fetchall()
+    if scoring.is_timed(scoring_type):
+        rows = sorted(rows, key=lambda r: (-r["head"], r["total"]))
+    else:
+        rows = sorted(rows, key=lambda r: (-r["head"], -r["total"]))
+    if limit:
+        rows = rows[:limit]
+    result = []
+    for r in rows:
+        display_name, _ = xml_export._team_names(r["name"], r["partner"] if is_team else "")
+        display_hometown = _combine_team_hometowns(r["hometown"], r["partner_hometown"] if is_team else "")
+        total_str = scoring.format_number(r["total"], scoring_type)
+        result.append({"name": display_name, "hometown": display_hometown, "display": f"{total_str}/{r['head']}"})
+    return result
+
+
 @app.route("/events/<int:eid>/leaderboards", methods=["GET", "POST"])
 def leaderboards(eid):
     conn = get_conn()
@@ -2365,56 +2546,16 @@ def leaderboards(eid):
     is_live_event = (live_event_id == str(eid))
     active_round_number = get_setting("active_round_number") if is_live_event else None
 
-    order = scoring.sort_order(event["scoring_type"])
     round_board = []
     if active_round_number and active_round_number in [str(n) for n in round_number_groups]:
         matching_round_ids = [r["id"] for r in rounds if str(r["round_number"]) == active_round_number]
-        placeholders = ",".join("?" * len(matching_round_ids))
-        round_board = conn.execute(
-            f"""
-            SELECT e.score_value, c.name, c.hometown
-            FROM entries e JOIN competitors c ON e.competitor_id = c.id
-            WHERE e.round_id IN ({placeholders}) AND e.status = 'scored'
-            ORDER BY e.score_value {order}
-            """,
-            matching_round_ids,
-        ).fetchall()
-        round_board = [
-            {"name": r["name"], "hometown": r["hometown"],
-             "display": scoring.format_number(r["score_value"], event["scoring_type"])}
-            for r in round_board
-        ]
+        round_board = _round_board_rows(conn, matching_round_ids, event["scoring_type"], event["is_team"])
 
     # Aggregate always combines every round in this event -- no manual
     # round selection. Two people scoring in round 1 and round 2 of the
     # same event get their scores summed together automatically.
     all_round_ids = [r["id"] for r in rounds]
-    agg_board = []
-    if all_round_ids:
-        placeholders = ",".join("?" * len(all_round_ids))
-        rows = conn.execute(
-            f"""
-            SELECT c.name, c.hometown, SUM(e.score_value) as total, COUNT(e.id) as head
-            FROM entries e JOIN competitors c ON e.competitor_id = c.id
-            WHERE e.round_id IN ({placeholders}) AND e.status = 'scored'
-            GROUP BY c.id
-            """,
-            all_round_ids,
-        ).fetchall()
-        # More head completed always ranks ahead of fewer head, regardless
-        # of raw total -- only within the same head count does the total
-        # decide the order (see xml_export.export_aggregate_leaderboard).
-        if scoring.is_timed(event["scoring_type"]):
-            rows = sorted(rows, key=lambda r: (-r["head"], r["total"]))
-        else:
-            rows = sorted(rows, key=lambda r: (-r["head"], -r["total"]))
-        for r in rows:
-            total = r["total"]
-            total_str = scoring.format_number(total, event["scoring_type"])
-            agg_board.append({
-                "name": r["name"], "hometown": r["hometown"],
-                "display": f"{total_str}/{r['head']}",
-            })
+    agg_board = _aggregate_board_rows(conn, all_round_ids, event["scoring_type"], event["is_team"])
 
     conn.close()
     return render_template(
@@ -2643,7 +2784,6 @@ def _announcer_live_boards(conn):
         "SELECT * FROM rounds WHERE event_id = ? ORDER BY round_number", (live_event_id,)
     ).fetchall()
     active_round_number = get_setting("active_round_number")
-    order = scoring.sort_order(event["scoring_type"])
 
     if active_round_number:
         matching_round_ids = [r["id"] for r in rounds if str(r["round_number"]) == str(active_round_number)]
@@ -2651,42 +2791,15 @@ def _announcer_live_boards(conn):
             live_round_name = next(
                 (r["name"] for r in rounds if str(r["round_number"]) == str(active_round_number)), ""
             )
-            placeholders = ",".join("?" * len(matching_round_ids))
-            rows = conn.execute(
-                f"""
-                SELECT e.score_value, c.name, c.hometown
-                FROM entries e JOIN competitors c ON e.competitor_id = c.id
-                WHERE e.round_id IN ({placeholders}) AND e.status = 'scored'
-                ORDER BY e.score_value {order}
-                LIMIT ?
-                """,
-                matching_round_ids + [ANNOUNCER_ROUND_BOARD_LIMIT],
-            ).fetchall()
-            round_board = [
-                {"name": r["name"], "hometown": r["hometown"],
-                 "display": scoring.format_number(r["score_value"], event["scoring_type"])}
-                for r in rows
-            ]
+            round_board = _round_board_rows(
+                conn, matching_round_ids, event["scoring_type"], event["is_team"],
+                limit=ANNOUNCER_ROUND_BOARD_LIMIT,
+            )
 
     all_round_ids = [r["id"] for r in rounds]
-    if all_round_ids:
-        placeholders = ",".join("?" * len(all_round_ids))
-        rows = conn.execute(
-            f"""
-            SELECT c.name, c.hometown, SUM(e.score_value) as total, COUNT(e.id) as head
-            FROM entries e JOIN competitors c ON e.competitor_id = c.id
-            WHERE e.round_id IN ({placeholders}) AND e.status = 'scored'
-            GROUP BY c.id
-            """,
-            all_round_ids,
-        ).fetchall()
-        if scoring.is_timed(event["scoring_type"]):
-            rows = sorted(rows, key=lambda r: (-r["head"], r["total"]))
-        else:
-            rows = sorted(rows, key=lambda r: (-r["head"], -r["total"]))
-        for r in rows[:ANNOUNCER_AGG_BOARD_LIMIT]:
-            total_str = scoring.format_number(r["total"], event["scoring_type"])
-            agg_board.append({"name": r["name"], "hometown": r["hometown"], "display": f"{total_str}/{r['head']}"})
+    agg_board = _aggregate_board_rows(
+        conn, all_round_ids, event["scoring_type"], event["is_team"], limit=ANNOUNCER_AGG_BOARD_LIMIT,
+    )
 
     return round_board, agg_board, live_event_name, live_round_name
 
@@ -3323,6 +3436,23 @@ def _backup_filename():
     safe_name = re.sub(r"[^A-Za-z0-9_-]+", "_", rodeo_name).strip("_") or "rodeo"
     stamp = datetime.datetime.now().strftime("%Y-%m-%d_%H%M")
     return f"{safe_name}_backup_{stamp}.db"
+
+
+@app.route("/settings/scoring_report")
+def scoring_report_download():
+    """Streams a single Excel workbook with the final (all-rounds-
+    combined) standings for every event -- see scoring_report.py.
+    Generated fresh on each request, in memory, same as the backup
+    export just below -- nothing about a rodeo's final results sits on
+    disk anywhere it wasn't already (the live database itself)."""
+    buffer = scoring_report.generate_scoring_report()
+    rodeo_name = get_setting("rodeo_name", "rodeo") or "rodeo"
+    return send_file(
+        buffer,
+        as_attachment=True,
+        download_name=scoring_report.report_filename(rodeo_name),
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
 
 
 @app.route("/settings/backup/export")

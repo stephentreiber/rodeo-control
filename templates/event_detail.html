@@ -112,13 +112,19 @@
 
 <table class="list scoring-table" {% if current_round_key != 'all' %}data-round-id="{{ current_round.id }}"{% endif %}>
   <tr>
-    <th>#</th><th>Draw #</th>
+    <th class="col-narrow">#</th><th class="col-narrow">Draw #</th>
     {% if current_round_key == 'all' %}<th>Round</th>{% endif %}
-    <th>{{ 'Header' if is_team_event else 'Competitor' }}</th><th>{{ 'Heeler' if is_team_event else 'Draw Animal' }}</th><th>Score</th><th>Who's Up</th><th></th>
+    <th>{{ 'Header' if is_team_event else 'Competitor' }}</th><th>{{ 'Heeler' if is_team_event else 'Draw Animal' }}</th>
+    {% if is_judged_event %}
+    {% for seat in range(1, judge_count + 1) %}
+    <th class="judge-header-group" title="Stacked: rider score, stock score, and a penalty code if one was called">{{ judge_names[seat] }}</th>
+    {% endfor %}
+    {% endif %}
+    <th>Score</th><th class="col-narrow">Who's Up</th><th class="col-narrow"></th>
   </tr>
   {% for e in entries %}
   <tr class="row-{{ e.status }} {{ 'live' if e.id == whos_up_entry_id }} {{ 'draggable-row' if current_round_key != 'all' }}" data-entry-id="{{ e.id }}">
-    <td>
+    <td class="col-narrow">
       <span class="row-num">{{ loop.index }}</span>
       {% if current_round_key != 'all' %}
       <span class="drag-handle" title="Drag to reorder">⠿</span>
@@ -126,7 +132,7 @@
       <form style="display:inline" method="post" action="{{ url_for('move_entry', eid=e.id, direction='down') }}"><button class="tiny" type="submit">↓</button></form>
       {% endif %}
     </td>
-    <td>{{ e.draw_number if e.draw_number is not none else '' }}</td>
+    <td class="col-narrow">{{ e.draw_number if e.draw_number is not none else '' }}</td>
     {% if current_round_key == 'all' %}<td>{{ e.round_name }}</td>{% endif %}
     <td class="editable-cell">
       <input type="text" class="edit-field name-field" value="{{ e.name }}" {{ 'disabled' if e.round_locked }}
@@ -151,6 +157,44 @@
              data-endpoint="/entries/{{ e.id }}/update_draw_animal">
     </td>
     {% endif %}
+    {% if is_judged_event %}
+    {% for s in e.judge_seats %}
+    <td class="judge-cell">
+      <div class="judge-cell-inner">
+        <div class="judge-score-inputs">
+          <div class="judge-stack">
+            <label class="judge-stack-label" title="Rider score">R</label>
+            <input type="number" class="draw-judge-rider" min="1" max="25" step="0.5"
+                   value="{{ s.rider_score if s.rider_score is not none else '' }}"
+                   data-entry-id="{{ e.id }}" data-seat="{{ s.seat }}"
+                   {{ 'disabled' if s.outcome in no_rider_score_outcomes }}>
+          </div>
+          <div class="judge-stack">
+            <label class="judge-stack-label" title="Stock score">S</label>
+            <input type="number" class="draw-judge-stock" min="1" max="25" step="0.5"
+                   value="{{ s.stock_score if s.stock_score is not none else '' }}"
+                   data-entry-id="{{ e.id }}" data-seat="{{ s.seat }}">
+          </div>
+        </div>
+        <div class="judge-pen-wrap">
+          <input type="hidden" class="draw-judge-outcome" data-entry-id="{{ e.id }}" data-seat="{{ s.seat }}" value="{{ s.outcome }}">
+          <button type="button" class="tiny draw-judge-pen-btn {{ 'draw-judge-pen-active' if s.outcome }}"
+                  data-entry-id="{{ e.id }}" data-seat="{{ s.seat }}"
+                  title="Penalty/outcome this judge called, if any">{{ s.outcome if s.outcome else 'PEN.' }}</button>
+          <div class="draw-judge-pen-menu" data-entry-id="{{ e.id }}" data-seat="{{ s.seat }}" style="display:none;">
+            <div class="draw-judge-pen-grid">
+              <button type="button" class="draw-judge-pen-option" data-value="" title="No penalty called">—</button>
+              {% for code, label in judge_outcomes.items() %}
+              <button type="button" class="draw-judge-pen-option" data-value="{{ code }}" title="{{ label }}">{{ code }}</button>
+              {% endfor %}
+              <button type="button" class="draw-judge-pen-clear-all" title="Clear this judge's score entirely">Clear</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </td>
+    {% endfor %}
+    {% endif %}
     <td>
       <input type="text" class="score-input" id="score-{{ e.id }}" data-entry-id="{{ e.id }}"
              data-scoring-type="{{ event.scoring_type }}"
@@ -172,17 +216,22 @@
       <button type="button" class="tiny resolve-vr-btn" data-entry-id="{{ e.id }}"
               title="Confirms the video review didn't change the score.">Confirm {{ '%.1f'|format(e.pending_score) }}</button>
       {% endif %}
+      {% if is_judged_event %}
+      <button type="button" class="tiny draw-finalize-btn" data-entry-id="{{ e.id }}"
+              title="Combines every judge's rider+stock score above into this entry's official score.">Finalize</button>
+      <span class="draw-finalize-status" id="draw-finalize-status-{{ e.id }}"></span>
+      {% endif %}
 
       <span class="error-label" id="error-{{ e.id }}"></span>
     </td>
-    <td class="whos-up-cell">
+    <td class="whos-up-cell col-narrow">
       {% if e.id == whos_up_entry_id %}
         <span class="badge">LIVE</span>
       {% else %}
         <button type="button" class="set-whos-up-btn" data-entry-id="{{ e.id }}">Set Who's Up</button>
       {% endif %}
     </td>
-    <td>
+    <td class="col-narrow">
       {% if not e.round_locked %}
       <form method="post" action="{{ url_for('remove_entry', eid=e.id) }}" onsubmit="return confirm('Remove from draw?');">
         <button class="icon-btn" type="submit" title="Remove from draw">🗑</button>
@@ -339,6 +388,9 @@ let CP_INDEX = {{ current_index }};
 const CP_JUDGE_OUTCOME_LABELS = {{ judge_outcomes|tojson }};
 const CP_NO_RIDER_SCORE_OUTCOMES = {{ no_rider_score_outcomes|tojson }};
 const CP_JUDGE_NAMES = {{ judge_names|tojson }};
+const IS_JUDGED_EVENT = {{ 'true' if is_judged_event else 'false' }};
+const DRAW_EVENT_ID = {{ event.id }};
+const DRAW_ROUND_KEY = {{ current_round_key|tojson }};
 // The genuinely-confirmed-by-the-server Who's Up entry -- separate from
 // CP_INDEX, which is just "what position the panel is currently
 // displaying" and may default to this round's first entry purely for
@@ -882,6 +934,12 @@ if (document.getElementById('contestant-panel')) {
       const entryId = cpFinalizeBtn.dataset.entryId;
       const statusEl = document.getElementById('cp-finalize-status');
       if (!entryId) return;
+      const entry = CP_ENTRIES.find(x => String(x.id) === String(entryId));
+      if (entry && entry.status === 're_ride') {
+        if (!confirm('This ride currently shows Re-Ride Taken. Finalizing again will undo that and restore the original score computed from the judges\' marks instead. Continue?')) {
+          return;
+        }
+      }
       cpFinalizeBtn.disabled = true;
       fetch(`/entries/${entryId}/finalize_judge_score`, { method: 'POST' })
         .then(r => r.json())
@@ -908,11 +966,12 @@ if (document.getElementById('contestant-panel')) {
               rowInput.value = data.display;
               const row = rowInput.closest('tr');
               if (row) row.className = row.className.replace(/row-\S+/, '').trim() + ' row-' + data.status;
-              // A prior "Take RR" button in the table row is stale once
-              // re-finalized -- it'll reappear on the next page load if
-              // still eligible, but shouldn't linger clickable right now.
-              const staleBtn = row ? row.querySelector('.take-re-ride-btn') : null;
-              if (staleBtn) staleBtn.remove();
+              // ensureTableTakeRrButton is defined further down this file
+              // (alongside the draw sheet's own judge-cell code), but by
+              // the time a human can click this button both script blocks
+              // have long since finished executing, so it's already
+              // available here.
+              ensureTableTakeRrButton(entryId, data.outcome === 'RR');
             }
             // Let the confirmation message sit for a moment before the
             // next poll (also running on its own 3s interval regardless)
@@ -958,8 +1017,7 @@ if (document.getElementById('contestant-panel')) {
                 const row = rowInput.closest('tr');
                 if (row) {
                   row.className = row.className.replace(/row-\S+/, '').trim() + ' row-' + data.status;
-                  const tableBtn = row.querySelector('.take-re-ride-btn');
-                  if (tableBtn) tableBtn.remove();
+                  ensureTableTakeRrButton(entryId, false);
                 }
               }
             } else {
@@ -1379,6 +1437,313 @@ document.addEventListener('click', function(e) {
 
 
 // so the operator doesn't lose their spot while running the draw list.
+
+// ---------- Draw sheet's own compact per-judge entry ----------
+// Lets the scorekeeper type each judge's rider+stock score (and a
+// penalty/outcome call, if one was made) directly on the draw sheet
+// itself -- for when a judge's phone/tablet isn't being used at all.
+// Writes to the exact same judge_scores rows a judge's own device would
+// (see judge_score_manual_set), so Finalize and the Stock leaderboard
+// behave identically either way. More compact than the dedicated Judge
+// Scores page (see judge_scores_table.html) -- same three fields per
+// judge, just stacked in one cell instead of three table columns, and
+// without that page's separate combined-score preview columns.
+function drawJudgeInputs(entryId, seat) {
+  const sel = `[data-entry-id="${entryId}"][data-seat="${seat}"]`;
+  return {
+    rider: document.querySelector('.draw-judge-rider' + sel),
+    stock: document.querySelector('.draw-judge-stock' + sel),
+    outcome: document.querySelector('input.draw-judge-outcome' + sel),
+    penBtn: document.querySelector('.draw-judge-pen-btn' + sel),
+  };
+}
+
+// Keeps the draw sheet table's own "Take RR" button in sync without
+// depending on the Current Contestant panel at all -- that panel has
+// its own separate internal Take RR button driven by its own polled
+// data, which is why re-ride handling looked like it worked as long as
+// the panel was open: the panel's copy was staying in sync, but this
+// table row's button never was (every finalize path here only ever
+// REMOVED a stale one, never added a fresh one back -- see the old
+// comments this replaced). Used from every place a finalize can
+// happen: this table's own Finalize button, the panel's Finalize
+// button, and the live poll below (for a judge calling RR from their
+// own device with nobody having clicked anything on this page at all).
+function ensureTableTakeRrButton(entryId, shouldShow) {
+  const rowInput = document.getElementById('score-' + entryId);
+  if (!rowInput) return;
+  const cell = rowInput.closest('td');
+  if (!cell) return;
+  let btn = cell.querySelector('.take-re-ride-btn');
+  if (shouldShow && !btn) {
+    btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'tiny danger take-re-ride-btn';
+    btn.dataset.entryId = entryId;
+    btn.title = 'A judge flagged this ride as a re-ride. Click to give up the score and mark it taken.';
+    btn.textContent = 'Take RR';
+    const finalizeBtn = cell.querySelector('.draw-finalize-btn');
+    if (finalizeBtn) cell.insertBefore(btn, finalizeBtn);
+    else cell.appendChild(btn);
+  } else if (!shouldShow && btn) {
+    btn.remove();
+  }
+}
+
+function saveDrawJudgeCell(entryId, seat) {
+  const { rider, stock, outcome } = drawJudgeInputs(entryId, seat);
+  if (!rider || !stock || !outcome) return;
+  if (!stock.value) return; // stock is always required, same as the judge app
+  // Rider is required too UNLESS this outcome doesn't carry a rider score
+  // at all (e.g. Buck Off) -- in that case the field's already disabled
+  // (see the penalty-menu handler below), so there's nothing to wait on.
+  if (!rider.disabled && !rider.value) return;
+  const body = new URLSearchParams({
+    rider_score: rider.disabled ? '' : rider.value,
+    stock_score: stock.value,
+    outcome: outcome.value,
+  });
+  fetch(`/entries/${entryId}/judge_scores/${seat}/manual_set`, { method: 'POST', body })
+    .then(r => r.json())
+    .then(data => {
+      [rider, stock].forEach(inp => inp.classList.remove('input-error', 'input-saved'));
+      if (!data.ok) {
+        [rider, stock].forEach(inp => inp.classList.add('input-error'));
+        return;
+      }
+      [rider, stock].forEach(inp => {
+        inp.classList.add('input-saved');
+        setTimeout(() => inp.classList.remove('input-saved'), 700);
+      });
+      outcome.dataset.pendingSave = '';
+      updateDrawFinalizeState(entryId);
+    })
+    .catch(() => { [rider, stock].forEach(inp => inp.classList.add('input-error')); });
+}
+
+// Enables the row's Finalize button only once every judge seat has a
+// stock score plus either a rider score or an outcome that doesn't need
+// one -- purely for the button's own enabled/label state; the server
+// independently re-checks everything itself before actually writing
+// anything (see finalize_judge_score), same as the Current Contestant
+// panel's version of this same check (cpEvaluateJudges).
+function updateDrawFinalizeState(entryId) {
+  const btn = document.querySelector(`.draw-finalize-btn[data-entry-id="${entryId}"]`);
+  const status = document.getElementById('draw-finalize-status-' + entryId);
+  if (!btn) return;
+  const riders = document.querySelectorAll(`.draw-judge-rider[data-entry-id="${entryId}"]`);
+  const stocks = document.querySelectorAll(`.draw-judge-stock[data-entry-id="${entryId}"]`);
+  const allFilled = riders.length > 0
+    && Array.from(riders).every(inp => inp.value !== '' || inp.disabled)
+    && Array.from(stocks).every(inp => inp.value !== '');
+  btn.disabled = !allFilled;
+  if (status) status.textContent = allFilled ? '' : 'Waiting on judge scores above.';
+}
+
+// Enter (numpad or main) advances straight to the next judge score field
+// -- rider, stock, next judge's rider, next judge's stock, then the
+// next row's judges, and so on -- instead of just saving and stopping.
+// Recomputes the field list fresh on every Enter rather than caching it
+// once, so it stays correct even if a late entry gets added to the
+// draw mid-session. Skips any disabled rider field (a judge's rider
+// auto-disables for a no-rider-score penalty like Buck Off) since
+// focusing a disabled input silently fails and would otherwise break
+// the chain right there.
+function focusNextDrawJudgeInput(fromInput) {
+  const all = Array.from(document.querySelectorAll('.draw-judge-rider, .draw-judge-stock'));
+  let idx = all.indexOf(fromInput);
+  while (++idx < all.length) {
+    if (!all[idx].disabled) { all[idx].focus(); all[idx].select(); return; }
+  }
+  fromInput.blur();
+}
+
+document.querySelectorAll('.draw-judge-rider, .draw-judge-stock').forEach(input => {
+  input.addEventListener('blur', function () {
+    saveDrawJudgeCell(input.dataset.entryId, input.dataset.seat);
+  });
+  input.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { e.preventDefault(); focusNextDrawJudgeInput(input); }
+  });
+});
+
+document.querySelectorAll('.draw-finalize-btn').forEach(btn => updateDrawFinalizeState(btn.dataset.entryId));
+
+// Keeps every visible judge cell in sync with submissions coming in from
+// judges' own devices, not just edits made directly on this page --
+// same reasoning as cpPollJudges above, just covering the whole draw
+// sheet instead of one entry. One bulk request per poll (see
+// draw_judge_scores) regardless of how many rows are on screen, so this
+// doesn't scale up with round size the way one-request-per-row would.
+function applyDrawJudgeSeatData(entryId, seatData) {
+  const { rider, stock, outcome, penBtn } = drawJudgeInputs(entryId, seatData.seat);
+  if (!rider || !stock || !outcome) return;
+  // Never overwrite a field the scorekeeper is actively typing into --
+  // an in-flight poll response landing mid-keystroke would otherwise
+  // wipe out whatever they hadn't saved yet.
+  if (document.activeElement === rider || document.activeElement === stock) return;
+  // Same idea for a penalty just picked from the popup but not saved yet
+  // (stock is still blank -- see the click handler above) -- otherwise
+  // the very next poll would revert the pick back to blank before the
+  // scorekeeper even finishes typing the stock score it's waiting on.
+  if (outcome.dataset.pendingSave === '1') return;
+
+  const newRider = seatData.rider_score !== null ? String(seatData.rider_score) : '';
+  const newStock = seatData.stock_score !== null ? String(seatData.stock_score) : '';
+  const newOutcome = seatData.outcome || '';
+
+  if (rider.value !== newRider) rider.value = newRider;
+  if (stock.value !== newStock) stock.value = newStock;
+  rider.disabled = CP_NO_RIDER_SCORE_OUTCOMES.includes(newOutcome);
+  if (outcome.value !== newOutcome) {
+    outcome.value = newOutcome;
+    if (penBtn) {
+      penBtn.textContent = newOutcome || 'PEN.';
+      penBtn.classList.toggle('draw-judge-pen-active', !!newOutcome);
+    }
+  }
+}
+
+function pollDrawJudgeScores() {
+  if (!IS_JUDGED_EVENT) return;
+  fetch(`/events/${DRAW_EVENT_ID}/draw_judge_scores?round=${encodeURIComponent(DRAW_ROUND_KEY)}`)
+    .then(r => r.json())
+    .then(data => {
+      if (!data.ok) return;
+      Object.keys(data.entries).forEach(entryId => {
+        const entryData = data.entries[entryId];
+        entryData.seats.forEach(seatData => applyDrawJudgeSeatData(entryId, seatData));
+        updateDrawFinalizeState(entryId);
+        // Catches a judge calling Re-Ride from their own device with
+        // nobody having clicked anything on this page at all -- the
+        // table's Take RR button should still show up on its own,
+        // not only after this page's own Finalize button is clicked.
+        ensureTableTakeRrButton(
+          entryId,
+          entryData.status === 'scored' && entryData.has_rr_flag && !entryData.re_ride_taken
+        );
+      });
+    })
+    .catch(() => {});
+}
+if (IS_JUDGED_EVENT) setInterval(pollDrawJudgeScores, 3000);
+
+// ---------- Compact penalty/outcome menu (the PEN. button) ----------
+// Collapses the outcome picker into an on-demand popup instead of a
+// 3rd row always taking up vertical space in every judge cell -- the
+// common case (no penalty called) costs nothing extra, and the menu
+// only appears when actually needed.
+function closeAllDrawPenMenus(except) {
+  document.querySelectorAll('.draw-judge-pen-menu').forEach(menu => {
+    if (menu !== except) menu.style.display = 'none';
+  });
+}
+
+document.addEventListener('click', function(e) {
+  const btn = e.target.closest('.draw-judge-pen-btn');
+  if (btn) {
+    const menu = document.querySelector(
+      `.draw-judge-pen-menu[data-entry-id="${btn.dataset.entryId}"][data-seat="${btn.dataset.seat}"]`
+    );
+    const isOpen = menu && menu.style.display !== 'none';
+    closeAllDrawPenMenus();
+    if (menu) menu.style.display = isOpen ? 'none' : 'block';
+    return;
+  }
+  // Clicked a penalty option inside an open menu.
+  const option = e.target.closest('.draw-judge-pen-option');
+  if (option) {
+    const menu = option.closest('.draw-judge-pen-menu');
+    const entryId = menu.dataset.entryId, seat = menu.dataset.seat;
+    const { rider, stock, outcome, penBtn } = drawJudgeInputs(entryId, seat);
+    const value = option.dataset.value;
+    outcome.value = value;
+    // Stock is always required to actually save (see saveDrawJudgeCell) --
+    // this flags the pick as a local, not-yet-committed change so the
+    // live poll (see applyDrawJudgeSeatData) leaves it alone instead of
+    // reverting it back to blank every 3 seconds while stock is still
+    // missing.
+    outcome.dataset.pendingSave = '1';
+    if (rider) {
+      rider.disabled = CP_NO_RIDER_SCORE_OUTCOMES.includes(value);
+      if (rider.disabled) rider.value = '';
+    }
+    if (penBtn) {
+      penBtn.textContent = value || 'PEN.';
+      penBtn.classList.toggle('draw-judge-pen-active', !!value);
+    }
+    menu.style.display = 'none';
+    if (stock && !stock.value) {
+      // Nothing to save yet -- jump straight to the one thing still
+      // needed, rather than leaving it to look like the pick just
+      // silently did nothing.
+      stock.focus();
+    } else {
+      saveDrawJudgeCell(entryId, seat);
+    }
+    return;
+  }
+  // "Clear this judge entirely" -- wipes rider/stock/outcome all at
+  // once, same server call the old dedicated clear button used.
+  const clearAll = e.target.closest('.draw-judge-pen-clear-all');
+  if (clearAll) {
+    const menu = clearAll.closest('.draw-judge-pen-menu');
+    const entryId = menu.dataset.entryId, seat = menu.dataset.seat;
+    menu.style.display = 'none';
+    fetch(`/entries/${entryId}/judge_scores/${seat}/clear`, { method: 'POST' })
+      .then(r => r.json())
+      .then(data => {
+        if (!data.ok) { alert(data.error || 'Could not clear that score.'); return; }
+        const { rider, stock, outcome, penBtn } = drawJudgeInputs(entryId, seat);
+        if (rider) { rider.value = ''; rider.disabled = false; rider.classList.remove('input-error', 'input-saved'); }
+        if (stock) { stock.value = ''; stock.classList.remove('input-error', 'input-saved'); }
+        if (outcome) { outcome.value = ''; outcome.dataset.pendingSave = ''; }
+        if (penBtn) { penBtn.textContent = 'PEN.'; penBtn.classList.remove('draw-judge-pen-active'); }
+        updateDrawFinalizeState(entryId);
+      })
+      .catch(() => alert('Could not reach the server -- that score may not be cleared.'));
+    return;
+  }
+  // Clicked anywhere else on the page -- close any open menu.
+  if (!e.target.closest('.draw-judge-pen-menu')) closeAllDrawPenMenus();
+});
+
+document.addEventListener('click', function(e) {
+  const btn = e.target.closest('.draw-finalize-btn');
+  if (!btn) return;
+  const entryId = btn.dataset.entryId;
+  const row = btn.closest('tr');
+  if (row && row.classList.contains('row-re_ride')) {
+    if (!confirm('This ride currently shows Re-Ride Taken. Finalizing again will undo that and restore the original score computed from the judges\' marks instead. Continue?')) {
+      return;
+    }
+  }
+  const status = document.getElementById('draw-finalize-status-' + entryId);
+  btn.disabled = true;
+  fetch(`/entries/${entryId}/finalize_judge_score`, { method: 'POST' })
+    .then(r => r.json())
+    .then(data => {
+      if (!data.ok) {
+        if (status) status.textContent = data.error || 'Could not finalize.';
+        updateDrawFinalizeState(entryId);
+        return;
+      }
+      const rowInput = document.getElementById('score-' + entryId);
+      if (rowInput) {
+        rowInput.value = data.display;
+        const row = rowInput.closest('tr');
+        if (row) row.className = row.className.replace(/row-\S+/, '').trim() + ' row-' + data.status;
+      }
+      ensureTableTakeRrButton(entryId, data.outcome === 'RR');
+      if (status) status.textContent = 'Finalized.';
+      syncPanelFromRow(entryId, data.display, data.status);
+    })
+    .catch(() => {
+      if (status) status.textContent = 'Could not reach the server.';
+      updateDrawFinalizeState(entryId);
+    });
+});
+
 // If the clicked row is part of the current-contestant panel's entries
 // (same round the panel already has loaded), route through cpSetCurrent
 // for an instant, no-round-trip update. Otherwise -- a row from a

@@ -216,7 +216,27 @@ html, body {
   text-align: right;
 }
 .announcer-board-name { flex: 1 1 auto; font-weight: 600; }
-.announcer-board-hometown { color: var(--announcer-text-muted); font-size: 0.85em; margin-left: 6px; }
+.announcer-board-name-text {
+  /* Keeps a team roping pair ("HEADER/HEELER") from wrapping mid-pair --
+     if the line has to wrap at all, it should only ever happen between
+     the name and the hometown (two separate inline elements below),
+     never inside either one's own text. */
+  white-space: nowrap;
+}
+.announcer-board-hometown {
+  color: var(--announcer-text-muted);
+  font-size: 0.85em;
+  margin-left: 6px;
+  /* Same reasoning as announcer-board-name-text above -- a team
+     roping pair's combined "Town A, ST/Town B, ST" has its own
+     internal spaces (after each comma), which without this the
+     browser would happily break in the middle of, landing half of one
+     hometown on the next line right where the other one's name still
+     is. Forcing the whole combined hometown to wrap as one unit reads
+     far more sensibly than a break at an arbitrary word boundary
+     inside it. */
+  white-space: nowrap;
+}
 .announcer-board-score { flex: 0 0 auto; font-weight: 700; color: var(--announcer-text); font-variant-numeric: tabular-nums; }
 
 .announcer-stock-sub { color: var(--announcer-text-muted); font-size: 0.85em; display: block; }

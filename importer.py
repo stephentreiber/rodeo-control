@@ -313,20 +313,21 @@ _HEADER_LINE = re.compile(r"^(EVENT|PERFORMANCE|SLACK\s+PERF)\b", re.IGNORECASE)
 
 
 def _split_text_line(line):
-    """Turns one line of extracted/OCR'd PDF text into cell values. These
+    """Turns one line of OCR'd PDF text into cell values. Real (non-OCR)
+    PDF text goes through the more reliable coordinate-based path below
+    instead (see _split_words_by_gap) -- OCR output has no word
+    coordinates at all, just a flat string, so this space-counting
+    fallback is only ever reached for a scanned/image page. These
     source draw sheets use literal "|" column separators even in their
-    plain-text/PDF renderings (matching the HTML version), so that's the
+    plain-text renderings (matching the HTML version), so that's the
     primary split. Failing that, fixed-width sheets (e.g. the CPRA
-    format) align columns with genuine runs of 2+ spaces once extracted
-    with layout preserved (see parse_pdf_draw_sheet) -- but EVENT/
+    format) align columns with genuine runs of 2+ spaces -- but EVENT/
     PERFORMANCE/SLACK PERF header lines are deliberately kept as a single
     cell even when a wide gap happens to land right after the keyword
     (e.g. "EVENT     :SADDLE BRONC"), since those have their own
     dedicated regex-based cleanup (_clean_event_name/_clean_round_name)
     that expects the whole line, not just the word "EVENT" with the
-    actual event name split off into a second cell. OCR output is less
-    reliable about preserving "|" or consistent spacing at all, so this
-    is best-effort for OCR'd lines specifically."""
+    actual event name split off into a second cell."""
     line = line.strip()
     if not line:
         return []
@@ -335,6 +336,87 @@ def _split_text_line(line):
     if _HEADER_LINE.match(line):
         return [line]
     return [cell.strip() for cell in _MULTISPACE.split(line)]
+
+
+def _group_words_into_lines(words, y_tolerance=2.0):
+    """Groups pdfplumber's extract_words() output into visual lines by
+    vertical position ("top"), each already sorted left to right. Small
+    y_tolerance absorbs the sub-point variation between words that are
+    visually on the same line but not pixel-identical (mixed fonts,
+    superscripts, rounding) -- without it, two words meant to be read as
+    one line could get split into separate "lines" over a fraction of a
+    point of difference."""
+    if not words:
+        return []
+    ordered = sorted(words, key=lambda w: (w["top"], w["x0"]))
+    lines = []
+    current = [ordered[0]]
+    current_top = ordered[0]["top"]
+    for w in ordered[1:]:
+        if abs(w["top"] - current_top) <= y_tolerance:
+            current.append(w)
+        else:
+            lines.append(sorted(current, key=lambda w: w["x0"]))
+            current = [w]
+            current_top = w["top"]
+    lines.append(sorted(current, key=lambda w: w["x0"]))
+    return lines
+
+
+def _typical_word_gap(word_lines):
+    """The median horizontal gap between consecutive words across every
+    multi-word line on the page -- a stand-in for "how wide is one
+    ordinary space in this document," used as the baseline a real
+    column gutter has to clearly exceed (see _split_words_by_gap).
+    Computed once for the whole page (not per line) since a single
+    short line doesn't have enough gaps of its own to give a reliable
+    estimate, and a genuine word-spacing rhythm is consistent across an
+    entire fixed-width sheet regardless of any one row's content."""
+    gaps = []
+    for words in word_lines:
+        for i in range(len(words) - 1):
+            gaps.append(words[i + 1]["x0"] - words[i]["x1"])
+    if not gaps:
+        return 6.0  # sane fallback for a page with almost no multi-word lines
+    gaps.sort()
+    return gaps[len(gaps) // 2]
+
+
+def _split_words_by_gap(words, typical_gap):
+    """Splits one line's words into cells using each word's actual
+    x-coordinate rather than counting spaces in already-rendered text --
+    this is what correctly separates columns even when a long name or
+    hometown leaves little or no visible gap before the next column in
+    the rendered text (see parse_pdf_draw_sheet's docstring). The words'
+    real positions on the page never actually overlap even when
+    extract_text()'s character-grid rendering makes it look like they
+    do, so working from the coordinates directly sidesteps the problem
+    at its source instead of trying to out-guess a lossy text
+    conversion.
+
+    A column break is any gap meaningfully wider than this page's
+    typical word-to-word spacing (see _typical_word_gap) -- 2.2x (or at
+    least 6 points more, for a very tight typical_gap) is generous
+    enough to tolerate a slightly-wider-than-usual space without
+    mistaking it for a real column gutter, while still catching genuine
+    gutters, which in every sample sheet seen so far are 3x+ the
+    ordinary word spacing."""
+    if not words:
+        return []
+    if len(words) == 1:
+        return [words[0]["text"]]
+    threshold = max(typical_gap * 2.2, typical_gap + 6)
+    cells = []
+    current = [words[0]["text"]]
+    for i in range(len(words) - 1):
+        gap = words[i + 1]["x0"] - words[i]["x1"]
+        if gap > threshold:
+            cells.append(" ".join(current))
+            current = [words[i + 1]["text"]]
+        else:
+            current.append(words[i + 1]["text"])
+    cells.append(" ".join(current))
+    return cells
 
 
 def parse_pdf_draw_sheet(file_bytes):
@@ -353,14 +435,6 @@ def parse_pdf_draw_sheet(file_bytes):
     try:
         with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
             for page_num, page in enumerate(pdf.pages, start=1):
-                # layout=True preserves the source PDF's actual column
-                # alignment as genuine runs of 2+ spaces (fixed-width
-                # sheets like the CPRA format use real column gaps, not
-                # just single spaces between words) -- the default mode
-                # collapses all whitespace to single spaces and silently
-                # destroys that structure, which is what was letting
-                # entire rows (name + hometown + stock) get parsed as one
-                # unsplit blob instead of three separate fields.
                 text = page.extract_text(layout=True) or ""
                 if len(text.strip()) < 20:
                     # Little to no extractable text -- likely a scanned
@@ -376,9 +450,51 @@ def parse_pdf_draw_sheet(file_bytes):
                             ],
                         }
                     ocr_pages.append(page_num)
-                    text = ocr_text
-                for line in text.splitlines():
-                    rows.append(_split_text_line(line))
+                    for line in ocr_text.splitlines():
+                        rows.append(_split_text_line(line))
+                    rows.append([])
+                    continue
+
+                # Real (non-OCR) text: split columns by each word's actual
+                # x-coordinate rather than by counting spaces in the
+                # rendered text -- layout=True's character-grid rendering
+                # can collapse a genuine column gutter down to a single
+                # space once a long name/hometown eats most of it, even
+                # though the words' real positions on the page never
+                # actually overlap. Falls back to the old space-counting
+                # behavior (_split_text_line) if pdfplumber can't produce
+                # a usable word list for some reason, or if a given text
+                # line's word count doesn't line up with expectation --
+                # never lets a coordinate-extraction hiccup take down the
+                # whole page's import.
+                text_lines = text.splitlines()
+                try:
+                    words = page.extract_words(use_text_flow=False, keep_blank_chars=False)
+                    word_lines = _group_words_into_lines(words)
+                except Exception:
+                    word_lines = None
+
+                if word_lines is None:
+                    for line in text_lines:
+                        rows.append(_split_text_line(line))
+                else:
+                    typical_gap = _typical_word_gap(word_lines)
+                    word_line_iter = iter(word_lines)
+                    for line in text_lines:
+                        if not line.strip():
+                            rows.append([])
+                            continue
+                        line_words = next(word_line_iter, None)
+                        if line_words is None:
+                            rows.append(_split_text_line(line))
+                            continue
+                        full_text = " ".join(w["text"] for w in line_words)
+                        if "|" in full_text:
+                            rows.append([c.strip() for c in full_text.split("|")])
+                        elif _HEADER_LINE.match(full_text):
+                            rows.append([full_text])
+                        else:
+                            rows.append(_split_words_by_gap(line_words, typical_gap))
                 rows.append([])  # blank separator between pages, mirrors blank rows in the source
     except Exception as exc:
         return {"events": [], "warnings": [f"Could not read that PDF: {exc}"]}

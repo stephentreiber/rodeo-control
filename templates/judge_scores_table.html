@@ -47,7 +47,7 @@
     {% endfor %}
   </tr>
   {% for e in entries %}
-  <tr data-entry-id="{{ e.id }}">
+  <tr data-entry-id="{{ e.id }}" data-status="{{ e.status }}">
     <td>{{ e.draw_number }}</td>
     <td>{{ e.name }}</td>
     <td>{{ e.hometown }}</td>
@@ -162,11 +162,17 @@ document.querySelectorAll('.js-finalize').forEach(btn => {
   btn.addEventListener('click', function () {
     const entryId = btn.dataset.entryId;
     const row = document.querySelector(`tr[data-entry-id="${entryId}"]`);
+    if (row && row.dataset.status === 're_ride') {
+      if (!confirm('This ride currently shows Re-Ride Taken. Finalizing again will undo that and restore the original score computed from the judges\' marks instead. Continue?')) {
+        return;
+      }
+    }
     fetch(`/entries/${entryId}/finalize_judge_score`, { method: 'POST' })
       .then(r => r.json())
       .then(data => {
         if (!data.ok) { alert(data.error || 'Could not finalize this entry.'); return; }
         row.querySelector('.js-official').textContent = data.display;
+        if (row) row.dataset.status = data.status;
       })
       .catch(() => alert('Could not reach the server -- this entry may not be finalized.'));
   });
